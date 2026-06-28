@@ -1,170 +1,132 @@
-# Proposal — The Accountability Layer for Open Agent Economies
+# Proposal v3 (Hybrid) — A "Prevent + Optimistic-Verify" Accountability Loop on Coral
 
-> **UK AI Agent Hackathon EP5 × Conduct** · DoraHacks #2272
-> Targeting **Coral (5,000 USDT) + Fetch.ai (1,000 USDT) + Kaspa (1,000 USDC)** on one BUIDL.
-> Submission deadline: **2026-07-04 22:59**.
+> **UK AI Agent Hackathon EP5 × Conduct** · DoraHacks #2272 · Coral / CoralOS & STUK bounty (5,000 USDT)
+> Single-track focus on **Coral** (Kaspa / Fetch dropped). Chain: **Solana + CoralOS**. Deadline: **2026-07-04 22:59**.
+> Version note: v3 = V1's accountability *vision* re-founded on V2's *optimistic + objective-re-execution mechanism*, settlement-first, delivered as a gradient.
 
-## 摘要(中文)
+## 摘要 (中文)
 
-Coral 给了一个「AI agent 互相买卖服务、用 Solana 自动结算」的开放市场,但它有个大洞:**卖家可以骗钱、交垃圾,没人执法。** 我们补的就是这个洞——一套四层**问责栈**(事前拦截 → 出错兜底 → 标准化信任 → 打分罚款+追责),让乱来的 agent 会被当场抓住、罚没押金、烧掉信誉。三条链各司其职:**Solana 管钱与罚款、Kaspa 管可携带的信誉身份、Fetch 管自然语言发现**。新颖性来自对齐真实标准 **ERC-8004**(并首次搬到非 EVM 的 Solana+Kaspa)+ 补上它留空的「执法」与「失败归因」。
+Coral 提供了「AI agent 互相买卖服务、用 Solana 自动结算」的开放市场,但故意留空了最难的一层——**卖家可以撒谎/偷工/摆烂,没人执法**。我们补这一层。不走大而全的 V1,也不一步跳到极简 V2,而是 **hybrid**:用一条被实战验证的**乐观验证-then-pay 机制**当脊柱,把 V1 的「事前预防/信誉」作为低成本层叠上去,形成 **预防→检测→结算→信誉** 四段流水线,全部在 Solana + CoralOS,demo 以「成交→agent 决定付钱→作弊者当场被 slash」为主线。
 
----
+## 1. The problem (validated by the market)
 
-## 1. The problem
+Agentic commerce is exploding (x402: **150M+ txns / $50M** in 9 months; **$3–5T** projected by 2030), but the **payment rails are already commoditized** (x402 / Google AP2 / Virtuals ACP / Olas). The unsolved layer is **trust**:
 
-Open agent-to-agent (A2A) markets let any agent advertise a service and get paid. The hard part isn't matching buyers and sellers — it's **trusting strangers**:
+- Plain escrow only knows binary "delivered / not delivered" — it can't judge **quality**.
+- A2A delegates security to implementers → impersonation, replay, recursive DoS.
+- The "Logic Monopoly" (agents that plan + execute + evaluate themselves) is quantified: **84% attack success, 31% emergent deception** ([AE4E, arXiv 2603.25100](https://arxiv.org/abs/2603.25100)).
 
-- Sellers can **lie, under-deliver, or fail**. Plain escrow only knows binary "delivered / not delivered" — it can't judge *quality*.
-- A2A's own security is **delegated to implementers** → fake agent advertisement, card tampering, replay, recursive-delegation DoS, no semantic validation ([arXiv 2602.11327](https://arxiv.org/html/2602.11327v2)).
-- When a **multi-hop deal** (broker → seller → oracle) fails, no one can say **whose fault it was**.
+This is exactly the layer Coral's mission (zero-trust, govern, observe) leaves empty — and what we build.
 
-This is a root cause of the 2026 "multi-agent credibility backlash": multi-agent systems often fail to beat a single agent **because there is no accountability**.
+## 2. Design principle: V1 vision + V2 mechanism + settlement-first
 
-Coral's own thesis is *"zero-trust coordination infrastructure … compose, **govern, observe**, and scale agent systems in production."* The starter kit ships the market but deliberately leaves the trust/governance layer empty. **We build that layer.**
+- **V1 was wrong in mechanism (verify-every + subjective slash) and sequencing (plumbing-first), not in vision.**
+- Real cases pin the right mechanism: UMA/Kleros use **optimistic challenge + bond**; Chainlink slashes only on **objective deviation**; web2 (Fiverr/Upwork) use **auto-release after N days + human dispute** — **nobody verifies subjective quality per delivery.**
+- Our honest delta vs [TessPay (Verify-then-Pay, arXiv 2602.00213)](https://arxiv.org/abs/2602.00213): use **re-execution as the adjudication predicate** — **no TEE / TLSNotary** — an order of magnitude lighter, buildable in 6 days.
 
-## 2. The solution — a four-layer accountability stack
+## 3. Architecture — a four-stage accountability pipeline
 
 ```
-Outbound agent action (bid / deliver / pay / message)
-        │
-   ① EGRESS PEP ............ PREVENT: policy gate before any action commits
-        │                    (allowlist · budget · velocity · replay-nonce · schema · integrity hash · audit log)
-        ▼
-   ② WEB2 FRAUD/ERROR OPS ... OPERATE: idempotency keys · retry+backoff · circuit breaker ·
-        │                    dispute window (= chargeback) · anomaly/velocity checks ·
-        │                    graduated trust limits · "decline reason-code" taxonomy
-        ▼
-   ③ ERC-8004 TRUST TRIAD ... STANDARDIZE: Identity / Reputation / Validation registries
-        │                    implemented across Solana (PDA) + Kaspa (KRC-20) — first non-EVM impl
-        ▼
-   ④ ENFORCE + ATTRIBUTE .... ENFORCE: Verifier grades quality → reason-code →
-                             Solana slash stake + Kaspa burn reputation +
-                             counterfactual failure attribution for multi-hop deals
+① PREVENT ───────→ ② DETECT ───────→ ③ SETTLE ───────→ ④ REPUTATION
+ Egress PEP         optimistic          escrow            Solana reputation PDA
+ (V1, pre-flight)   challenge +         release / slash   + ERC-8004 naming
+ (extend guard.ts)  objective re-exec   ↑Coral required↑  bond scales w/ reputation
+                    (V2, verify-on-dispute)               (stretch: multi-hop attribution)
+            └──────── all on Solana + CoralOS, single chain / single track ────────┘
 ```
 
-### ① Egress PEP (prevent)
-A unified policy-enforcement point every agent's outbound action passes through *before* it commits. Coral already enforces budget/floor/allowed-recipients in code (`guard.ts`) — we generalize that into a first-class **egress gateway** with structured audit logging. Each check maps to a known A2A attack:
+- **Spine = ②③ (V2)**: seller delivers and posts a bond → **optimistic auto-release** (settles via Solana Pay if unchallenged in the window) → buyer/challenger can dispute by posting a bond → **Arbiter agent re-executes objectively (re-quote / recompute) → loser's bond is slashed and redistributed** (UMA economics).
+- **① Prevent (V1)**: every outbound action passes a unified **Egress PEP** (allowlist · budget · velocity · replay-nonce · schema · integrity hash + audit log). V2 only covers after-the-fact; this adds before-the-fact → **prevent + detect double loop**, more complete than TessPay/UMA alone.
+- **④ Reputation (V1, light)**: challenge outcomes write to a **Solana reputation PDA**; bond size scales with reputation (graduated trust). **ERC-8004** Identity/Reputation/Validation names the spine (framing only, ~zero extra eng).
+- **Stretch**: counterfactual failure attribution for multi-hop deals (one scripted case, deck appendix — not in the core demo).
 
-| Check | A2A attack it blocks |
-|---|---|
-| recipient allowlist (only seen in a real 402 challenge) | phishing payment / card tampering |
-| replay nonce + unique `reference` | replay attack |
-| velocity / rate limit | recursive-delegation DoS |
-| schema + semantic validation | prompt injection / fake capability advertisement |
-| tamper-evident audit log | feeds ③ Reputation & ④ Attribution |
+## 4. Why the hybrid beats both V1 and V2
 
-### ② Web2 fraud/error operations (operate)
-Port battle-tested internet patterns into the agent economy:
-- **Errors**: HTTP semantics (Coral already uses 402) · **idempotency keys** (a retried payment never double-charges) · exponential backoff + jitter · **circuit breaker** (stop routing to a failing seller) · dead-letter → dispute.
-- **Fraud**: **dispute window = chargeback** (escrow refund deadline + `arbitrate`) · anomaly/velocity detection (catches sybil & collusion) · **graduated trust limits** (new/low-reputation agents get low caps; trust unlocks volume — Stripe/PayPal-style onboarding).
-- **Signature artifact — the "decline reason-code" taxonomy**: like card-network chargeback reason codes, define a code set for agent-economy failures (`NON_DELIVERY` · `QUALITY_FAIL` · `TIMEOUT` · `SCHEMA_INVALID` · `FRAUD` · `UPSTREAM_FAULT`). The Verifier emits a reason-code that drives attribution, reputation, and dispute resolution in one shared vocabulary.
+| | V1 (full stack) | V2 (minimal) | **v3 Hybrid** |
+|---|---|---|---|
+| Verification | verify-every (costly/brittle) | optimistic | **optimistic** (from V2) |
+| Adjudication | subjective grading | objective re-exec | **objective re-exec** (from V2) |
+| Prevention | yes (Egress) | none | **yes (from V1) → double loop** |
+| Reputation/standards | Kaspa + ERC-8004 (heavy) | ~none | **Solana PDA + ERC-8004 naming (light)** |
+| Novelty collision | high (TessPay) | low | **low** (re-execution delta) |
+| Scope / 6 days | overloaded | thin | **gradient ladder, just right** |
+| Chains | three | one | **one (Solana)** |
 
-### ③ ERC-8004 trust triad (standardize)
-[ERC-8004 "Trustless Agents"](https://eips.ethereum.org/EIPS/eip-8004) extends Google's A2A with three on-chain registries. **We implement the triad on a non-EVM, multi-chain stack — a first.**
+## 5. Simplification from single-chain focus (Kaspa/Fetch dropped)
+- Three chains → **Solana + CoralOS**: clean demo, no cross-chain bridge, no Kaspa TN12 risk.
+- Reputation: Kaspa KRC-20 → **Solana PDA** — simpler, and hits Coral's "on-chain reputation layer" bonus.
+- All effort concentrated on one loop → max out the Coral track.
 
-| ERC-8004 registry | Our implementation |
-|---|---|
-| **Identity Registry** | CoralOS agent + Solana PDA identity (optional Kaspa address binding) |
-| **Reputation Registry** | **Kaspa KRC-20 "reputation passport"** — portable across markets |
-| **Validation Registry** | **Verifier/Arbiter agent + Solana `arbitrate` instruction** (crypto-economic validation via stake) + optional Pyth/TxLine merkle proofs (cryptographic validation) |
+## 6. Hero service (candidates — **not locked**)
 
-This aligns us to a real 2025/26 standard **and** fills the two gaps ERC-8004 leaves abstract: **enforcement** and **failure attribution**.
+**Selection rule**: the hero service's quality must be **objectively verifiable by re-execution**, else the slash collapses (rules out subjective services like Claude inference). Three candidates, one per verification paradigm:
 
-### ④ Enforce + attribute (our research moat)
-The Verifier scores delivery *quality* against the WANT spec (LLM-judge with rubric) → emits a **reason-code** → **slashes stake on Solana** + **burns reputation on Kaspa**. For multi-hop failures, **counterfactual failure attribution** (replay-and-attribute) pins blame on the true culprit before slashing — so honest intermediaries aren't punished.
+| Candidate | Verification paradigm | Advantage | Cost |
+|---|---|---|---|
+| Jupiter verified best-execution | re-do & diff | crispest slash, lowest eng | kit default → weak differentiation |
+| Helius wallet risk score | recompute formula | highest differentiation, thematic fit | needs a deterministic rubric first |
+| TxODDS resolution oracle | proof-check | cryptographic verification, organizer bonus | medium eng, possible collision |
 
-## 3. Architecture — three orthogonal concerns, one per chain
+> Left open. The best fit for the "objective re-execution" spine is **Jupiter re-quote**, but you decide. A "hero + one secondary service" combo is fine.
 
-| Concern | Chain | Role |
+## 7. Gradient build ladder (each rung is a shippable Coral submission)
+
+| Rung | Content | Note |
 |---|---|---|
-| **Money / enforcement** | **Solana** (Coral) | delivery escrow + arbiter + `arbitrate` + stake/slash |
-| **Identity / reputation** | **Kaspa** | portable KRC-20 reputation passport (Kasplex Kiwi JS SDK, TN11) |
-| **Discovery / interface** | **Fetch.ai** | uAgent + Chat Protocol on Agentverse, found via ASI:One |
+| **L0** | Coral market runs + one real devnet settlement (Explorer link) | Coral minimum |
+| **L1 (spine)** | bond + escrow + **optimistic challenge + objective re-exec + slash** | V2 core — **strong 5k contender on its own** |
+| **L2 (+prevent)** | **Egress PEP** + audit log + reason-code taxonomy | V1 prevention, prevent+detect double loop |
+| **L3 (+reputation)** | challenge outcomes → **Solana reputation PDA** → bond scales; ERC-8004 naming | V1 reputation/framing |
+| **L4 (stretch)** | multi-hop counterfactual attribution (one scripted case) | V1 research, deck appendix |
 
-**Solana = money at risk for *this* deal. Kaspa = identity that *outlives* any deal. Fetch = how you're *found*.** No overlap; each load-bearing.
+**Stop-loss**: L0–L1 = complete prize core; L2/L3 = cheap, high-credibility add-ons; L4 only if time allows.
 
-## 4. Novelty statement (for pitch / abstract)
+## 8. Coral judging map
 
-> *ERC-8004 defines the trust **registries** but leaves **enforcement** and **failure attribution** abstract, and is EVM-only. A2A defines **communication** but delegates **security** to implementers (impersonation, replay, recursive DoS). We close both gaps: a non-EVM, multi-chain (Solana + Kaspa) implementation of the ERC-8004 trust triad for a CoralOS/A2A market, fronted by an **egress policy-enforcement point** (prevention) and **web2-grade fraud/error handling** (resilience), with **counterfactual failure attribution** as the validation mechanism's brain. Prevention + standards + enforcement + attribution = the first end-to-end accountability stack for open agent economies.*
+> Note: Coral's formal rubric is still "dropping soon." The below follows the track/submission guidance as of 6/28 — re-confirm weights in Discord (`discord.gg/tRnC3YjMV`).
 
-## 5. What we build vs. reuse
-
-| Component | Build / Reuse |
-|---|---|
-| CoralOS market, escrow (`initialize/release/refund`), buyer/seller/broker, dashboard | **Reuse** (`solana_coralOS` starter kit) |
-| Differentiated `deliverService()` | Build (small fork) |
-| Egress PEP + audit log | Build (generalize `guard.ts`) |
-| Reason-code taxonomy + dispute window + idempotency/circuit-breaker | Build (mostly app logic) |
-| Verifier/Arbiter agent (new agent #4) | Build |
-| Solana `arbitrate` + stake/slash + reputation PDA (#5) | Build (via `solana-dev` skill → Anchor + LiteSVM) |
-| Kaspa KRC-20 reputation passport | Build (`@kasplex/kiwi-web`) |
-| Fetch uAgent + Chat Protocol registration | Build (Python `uagents`) |
-| Counterfactual attribution (3-hop) | Build (research overlay) |
-
-## 6. Bounty requirements checklist
-
-**Coral (required):**
-- [ ] ≥1 real devnet transaction + Solana Explorer `?cluster=devnet` link
-- [ ] CoralOS (MCP) coordination in a **session thread** (not a side-channel)
+- [ ] ≥1 real devnet tx + Explorer `?cluster=devnet` link (① does it settle?)
+- [ ] CoralOS (MCP) coordination in a **session thread**, not a side-channel — **Verifier/challenge messages also go through the thread**
 - [ ] Solana Pay: recipient + amount + **unique reference**
-- [ ] Open-source repo + README (one-command run)
-- [ ] Pitch deck (3–6 slides) + demo video (≤3 min) showing **live settlement**
-- [ ] Bonus: smart-contract extension (arbiter/`arbitrate` + staking/slashing) ✅
+- [ ] Differentiated service (②) / agentic depth: buyer, sellers, challenger, Arbiter all **decide and act** (③)
+- [ ] Bonus (⑤): smart contract (bond/escrow/slash) + multi-agent graph + on-chain reputation
+- [ ] Open-source repo + README + 3–6 slide deck + ≤3-min video showing **live settlement**
 
-**Fetch.ai:**
-- [ ] Agent(s) registered on **Agentverse**, discoverable + usable via **ASI:One**
-- [ ] Core use case demoable inside an ASI:One conversation (Chat Protocol)
-
-**Kaspa:**
-- [ ] Kaspa used as a **programmable coordination/commitment layer, not a payment rail** (KRC-20 reputation passport, minted/burned from verdicts)
-
-## 7. 6-day plan (checkpoint-laddered — each rung ships)
-
-1. **D1 — Coral floor**: clone kit, run on devnet, fork `deliverService()`, land **one settled tx + Explorer link**.
-2. **D2–3 — Coral prize path**: Verifier agent + `arbitrate` + stake/slash + reputation PDA (via `solana-dev`). Demo: cheater under-delivers → slashed on-chain. *(Lock 5k.)*
-3. **D3 — Egress PEP + reason-codes + dispute window**: generalize `guard.ts`, add audit log + reason-code taxonomy (low cost, high novelty).
-4. **D3.5 — Fetch (+1k)**: uAgent + Chat Protocol + Agentverse; trigger market from ASI:One.
-5. **D4 — Kaspa (+1k)**: KRC-20 reputation passport via Kiwi; verdict → mint/burn. *(Noon decision gate: if Kiwi fights back, fall back to minimal mint+transfer.)*
-6. **D5 — Differentiation**: counterfactual attribution on a 3-hop deal + self-evolving seller overlay + dashboard (stakes / reputation / attribution graph).
-7. **D6 — Package**: ≤3-min video (lead with live settlement), 5-slide deck, README, Explorer links; submit on DoraHacks (all 3 bounties) + email `xforce94@gmail.com` + post in sponsor Discords.
-
-**Stop-loss:** rungs 1–4 alone = strong Coral + Fetch (~6k). Kaspa is the only real-risk add, and it's de-risked to mature KRC-20 tooling.
-
-## 8. Demo script (Coral: "the proof slide wins")
-
-1. **Normal round** — user finds the market via ASI:One → sellers bid → winner delivers → escrow releases (Explorer link).
-2. **Plant a cheater** — lowest bid, garbage delivery.
-3. **Egress + Verifier** — egress logs the action; Verifier grades it `QUALITY_FAIL` → **stake slashed on Solana + reputation burned on Kaspa** (both Explorer links).
-4. **Multi-hop failure** — a brokered deal fails; **counterfactual attribution names the true culprit** (not the broker).
-5. **Convergence curve** — with accountability on, the market converges to honest behavior.
+## 9. Demo script ("the proof slide wins")
+1. **Normal round** — buyer posts a need → sellers bid → winner delivers + posts bond → unchallenged in the window → **Solana Pay auto-settles** (Explorer link).
+2. **Plant a cheater** — lowest bid, deviating/garbage delivery.
+3. **Challenge + objective re-execution** — challenger posts bond → Arbiter **re-executes and diffs** → deviation confirmed → **loser's bond slashed on-chain** (Explorer link); reputation PDA drops.
+4. **(optional) Egress block** — show an obviously out-of-policy action blocked pre-flight + audit log.
+5. **(stretch) Multi-hop** — a brokered deal fails → counterfactual attribution names the true culprit.
 
 Every beat shows an on-chain transaction.
 
-## 9. Pitch deck outline (5 slides)
-
-1. **The customer & problem** — open agent markets have no accountability.
-2. **What it sells** — the `deliverService` + the accountability layer on top.
-3. **Why they pay / why it's trustworthy** — egress prevents, web2-ops resolves, ERC-8004 standardizes, slashing+attribution enforces.
-4. **The economy** — a graph of agents (buyer/seller/broker/verifier) across 3 chains.
+## 10. Pitch deck outline (5 slides)
+1. **Customer & problem** — open agent markets have no accountability (cite 84%/31%).
+2. **What it sells** — the hero `deliverService` in one line.
+3. **Why it's trustworthy** — prevent (Egress) + optimistic verify (challenge + re-exec) + slash + reputation.
+4. **The economy** — buyer/seller/challenger/Arbiter agent graph (single-chain Solana).
 5. **Proof** — live settlement + slash, Explorer links. *(This slide wins.)*
 
-## 10. Risks & mitigations
+## 11. Surviving novelty (narrow but true)
+
+> *Optimistic-oracle dispute resolution (UMA/Kleros) brought to A2A **service-quality** settlement, using **re-execution as an automatable adjudication predicate** (no TEE/TLSNotary), combined with **pre-flight Egress prevention** for a prevent+detect double loop — native to Solana/CoralOS.*
+
+Real marketplaces (Upwork/Fiverr) resolve disputes with **humans**; crypto oracles use **optimistic bonds**; we bring the latter to agent *service* markets with **automatable adjudication + pre-flight prevention**. Narrow, true, not yet productized. ERC-8004 / counterfactual attribution stay as background / future work — no overclaim.
+
+## 12. Risks & mitigations
 
 | Risk | Mitigation |
 |---|---|
-| Kaspa SilverScript covenants too raw (TN12, Rust, no WASM) | Use **KRC-20 via Kasplex Kiwi (JS, TN11)** as baseline; covenant only as stretch |
-| Scope (3 chains in 6 days) | Checkpoint ladder + stop-loss: even if Kaspa slips, bank Coral+Fetch (~6k) |
-| Coral judges want settlement, not just research | Rung 1 lands a live tx before any research layer; "proof slide" leads the demo |
-| Counterfactual attribution too broad | Scope to one scripted 3-hop failure + replay, not a general engine |
+| Coral rubric not finalized | Confirm weights in Discord; follow track guidance and label it |
+| Anchor/Rust (bond/escrow/slash) is the hard part | Use `solana-dev` skill to scaffold; fallback = deposit-to-program-address + transfer-based slash, no custom instruction required |
+| Scope overload | L0–L4 ladder + stop-loss: L0–L1 already stands |
+| Collision with TessPay / commoditized rails | Narrow to re-execution + prevent+detect as the honest delta |
+| Slash not credible | Only use an **objectively re-executable** hero service |
 
-## 11. References
-
-- ERC-8004 Trustless Agents — [EIP](https://eips.ethereum.org/EIPS/eip-8004) · [dev guide](https://blog.quicknode.com/erc-8004-a-developers-guide-to-trustless-ai-agent-identity/)
-- A2A security threat modeling — [arXiv 2602.11327](https://arxiv.org/html/2602.11327v2) · [improving A2A](https://arxiv.org/html/2505.12490v3)
-- AI agent egress / guardrails — [Galileo guardrails survey](https://galileo.ai/blog/best-ai-agent-guardrails-solutions)
-- Coral starter kit — [github.com/trilltino/solana_coralOS](https://github.com/trilltino/solana_coralOS)
-- Kaspa KRC-20 — [Kasplex docs](https://docs-kasplex.gitbook.io/krc20) · [Kiwi web SDK](https://www.npmjs.com/package/@kasplex/kiwi-web)
-- Fetch.ai — [ASI:One uAgent example](https://uagents.fetch.ai/docs/examples/asi-1) · [Agentverse launch guide](https://docs.agentverse.ai/documentation/launch-agents/launch-asi-one-compatible-u-agent)
-- Local knowledge base — `coral-knowledge/` (CoralOS, Solana escrow, codebase kit, submission rules)
+## 13. References
+- [TessPay — Verify-then-Pay (arXiv 2602.00213)](https://arxiv.org/abs/2602.00213) · [AE4E separation-of-power (arXiv 2603.25100)](https://arxiv.org/abs/2603.25100)
+- [UMA optimistic oracle](https://www.polysyncer.net/blog/polymarket-uma-oracle-explained/) · [Kleros vs UMA](https://blog.kleros.io/kleros-and-uma-a-comparison-of-schelling-point-based-blockchain-oracles/) · [EigenLayer 2026](https://blockeden.xyz/blog/2026/03/20/eigenlayer-18b-tvl-vertical-avs-specialization-restaking-evolution/)
+- [Coinbase x402 + AP2](https://www.coinbase.com/developer-platform/discover/launches/google_x402) · [Virtuals ACP](https://www.dextools.io/tutorials/what-is-virtuals-protocol-ai-agents-base-guide-2026) · [ERC-8004 EIP](https://eips.ethereum.org/EIPS/eip-8004)
+- Coral starter kit [github.com/trilltino/solana_coralOS](https://github.com/trilltino/solana_coralOS) · local knowledge base `coral-knowledge/`
 </content>
-</invoke>
