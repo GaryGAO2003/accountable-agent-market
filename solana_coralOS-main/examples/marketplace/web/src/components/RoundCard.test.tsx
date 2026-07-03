@@ -32,6 +32,11 @@ describe('RoundCard', () => {
     expect(links.some((a) => a.href.includes('3PMa9LBZn7VEMD1qZnmr') && a.href.includes('cluster=devnet'))).toBe(true)
   })
 
+  it('shows objective verification before release', () => {
+    render(<RoundCard round={settledRound} />)
+    expect(screen.getByTestId('verification').textContent).toContain('Verified: re-exec matched')
+  })
+
   it('shows the status pill as settled', () => {
     render(<RoundCard round={settledRound} />)
     expect(screen.getByTestId('status').textContent).toBe('settled')

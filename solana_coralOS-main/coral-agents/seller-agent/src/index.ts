@@ -12,6 +12,7 @@ import type { Program } from '@coral-xyz/anchor'
 import { PublicKey } from '@solana/web3.js'
 import {
   startCoralAgent, verb, parseWant, formatBid, parseAward, formatEscrowRequired, parseDeposited,
+  formatDelivered,
 } from '@pay/agent-runtime'
 import { decideBid, sellerConfigFromEnv } from './bidder.js'
 import { makeProgram, isFunded } from './escrow.js'
@@ -122,7 +123,7 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
             continue
           }
           const result = await deliverService(`${order.service} ${order.arg}`.trim())
-          await ctx.reply(mention, `DELIVERED round=${deposited.round} ${result}`)
+          await ctx.reply(mention, formatDelivered({ round: deposited.round, raw: result }))
         } catch (e) {
           await ctx.reply(mention, `ERROR: settlement failed - ${(e as Error).message}`)
         }

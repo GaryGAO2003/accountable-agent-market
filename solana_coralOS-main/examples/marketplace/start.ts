@@ -53,6 +53,14 @@ async function main() {
   }
   const rpc = env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
   const trace = env.TRACE ?? ''
+  const arbiterAgentEnabled = env.ARBITER_AGENT_ENABLED === '1'
+  const arbiterAgentName = env.ARBITER_AGENT_NAME ?? 'arbiter-agent'
+  if (arbiterAgentEnabled && !env.ARBITER_KEYPAIR_B58) {
+    throw new Error('ARBITER_AGENT_ENABLED=1 requires ARBITER_KEYPAIR_B58 in .env')
+  }
+  if (arbiterAgentEnabled && env.SETTLEMENT_MODE === 'direct') {
+    throw new Error('ARBITER_AGENT_ENABLED=1 requires arbiter settlement; unset SETTLEMENT_MODE=direct')
+  }
 
   // LLM provider — the kit uses Venice AI; flip the whole market with LLM_PROVIDER in .env (see LLM.md).
   const llmOpts: Record<string, unknown> = {}
@@ -92,10 +100,14 @@ async function main() {
 
   // Every seller is a txline seller sharing the receive wallet + token; they compete on persona/floor
   // (set per coral-agent.toml), not code. The buyer awards best value and settles the winner via escrow.
+  const demoFailVerification = env.DEMO_FAIL_VERIFICATION === '1'
+  const failingSeller = env.DEMO_FAILING_SELLER ?? 'seller-cheap'
+  const failureMode = env.TXLINE_DELIVERY_MODE ?? 'bad_count'
   const seller = (name: string) =>
     agent(name, {
       SELLER_WALLET: str(wallet), SOLANA_RPC_URL: str(rpc), AGENT_NAME: str(name),
       SERVICES: str('txline'), TXLINE_API_KEY: str(txlineKey),
+      ...(demoFailVerification && name === failingSeller ? { TXLINE_DELIVERY_MODE: str(failureMode) } : {}),
       // The deployed devnet arbiter program has a first-come global config (its arbiter key is already
       // taken), so forked kits can't arbiter-settle — SETTLEMENT_MODE=direct flips to the base escrow.
       ...(env.SETTLEMENT_MODE ? { SETTLEMENT_MODE: str(env.SETTLEMENT_MODE) } : {}),
@@ -109,7 +121,7 @@ async function main() {
   // Optional broker swarm (ENABLE_BROKER=1, see coral-agents/broker/README.md): the buyer buys from a
   // broker, which resells from the real sellers. Needs a funded broker wallet + seller receive wallets —
   // `node scripts/provision-swarm.js`.
-  const brokerWanted = env.ENABLE_BROKER === '1'
+  const brokerWanted = !demoFailVerification && !arbiterAgentEnabled && env.ENABLE_BROKER === '1'
   const brokerReady = brokerWanted && !!env.BROKER_KEYPAIR_B58 && !!env.BROKER_WALLET
   if (brokerWanted && !brokerReady) {
     console.warn('[marketplace] ENABLE_BROKER=1 but BROKER_KEYPAIR_B58/BROKER_WALLET missing — run `node scripts/provision-swarm.js`. Skipping broker.')
@@ -123,7 +135,7 @@ async function main() {
       })]
     : []
   // Who the buyer shops + the payout wallet it binds the escrow to (F3): the broker if enabled, else the sellers.
-  const buyerSellers = brokerReady ? ['broker'] : sellers
+  const buyerSellers = brokerReady ? ['broker'] : demoFailVerification ? [failingSeller] : sellers
   const buyerExpectedWallet = brokerReady ? env.BROKER_WALLET : wallet
 
   // The buyer shops for the txline read. `fixtures` always returns data; override with BUYER_ARG (e.g.
@@ -146,8 +158,21 @@ async function main() {
     BUYER_ARG: str(buyerArg),
     ...(buyerArgs ? { BUYER_ARGS: str(buyerArgs) } : {}),
     MARKET_SELLERS: str(buyerSellers.join(',')),
+    ...(arbiterAgentEnabled ? { ARBITER_AGENT_ENABLED: str('1'), ARBITER_AGENT_NAME: str(arbiterAgentName) } : {}),
     ...llmOpts,
   }
+
+  const arbiterAgents = arbiterAgentEnabled
+    ? [agent(arbiterAgentName, {
+        ARBITER_KEYPAIR_B58: str(env.ARBITER_KEYPAIR_B58 ?? ''),
+        AGENT_NAME: str(arbiterAgentName),
+        SOLANA_RPC_URL: str(rpc),
+        TXLINE_API_KEY: str(txlineKey),
+        ...(env.TXLINE_BASE_URL ? { TXLINE_BASE_URL: str(env.TXLINE_BASE_URL) } : {}),
+        ...(env.ARBITER_REFUND_ON_REJECT ? { ARBITER_REFUND_ON_REJECT: str(env.ARBITER_REFUND_ON_REJECT) } : {}),
+        ...(trace ? { TRACE: str(trace) } : {}),
+      })]
+    : []
 
   // coral-server spawns one container per agent in this graph. Docs:
   //   create-session   https://docs.coralos.ai/api-reference/local/create-session
@@ -158,8 +183,9 @@ async function main() {
       agentGraphRequest: {
         agents: [
           agent('buyer-agent', buyerOpts),
-          ...sellers.map((s) => seller(s)),
+          ...(demoFailVerification ? [seller(failingSeller)] : sellers.map((name) => seller(name))),
           ...brokerAgents,
+          ...arbiterAgents,
         ],
       },
       namespaceProvider: { type: 'create_if_not_exists', namespaceRequest: { name: NS } },
@@ -169,7 +195,13 @@ async function main() {
   if (!sres.ok) throw new Error(`session create failed: ${sres.status} ${await sres.text()}`)
   const { sessionId } = await sres.json() as { sessionId: string }
 
-  const lineup = brokerReady ? `broker (reselling ${sellers.join(', ')})` : sellers.join(', ')
+  const lineup = brokerReady
+    ? `broker (reselling ${sellers.join(', ')})`
+    : demoFailVerification
+      ? `${failingSeller} (scripted ${failureMode} verification failure)`
+      : arbiterAgentEnabled
+        ? `${sellers.join(', ')} + ${arbiterAgentName}`
+        : sellers.join(', ')
   console.log(`\n✅ Market session ${sessionId} — buyer + ${lineup}.`)
   console.log(`   receive wallet: ${wallet}`)
   console.log('   The buyer broadcasts a WANT; sellers bid; the winner settles via escrow.\n')

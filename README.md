@@ -14,14 +14,15 @@ One **buyer agent** broadcasts a need over a shared CoralOS thread. Four **LLM s
 (high-confidence premium), and `seller-rogue` (**the villain**: wins bids, takes the escrow, never
 delivers) — each decide with an LLM whether and how much to bid, bounded by their cost floors. The
 buyer awards with a stated reason, locks payment in a **Solana escrow**, the winner delivers
-**real TxODDS World Cup data**, and the escrow **releases on delivery**. When the rogue wins and
-ghosts, the buyer waits out the on-chain deadline and **reclaims its funds with the escrow's
-refund instruction** — the round turns red on the dashboard with its own Explorer link. Every hop
-is a real devnet transaction; a React dashboard folds the transcript into a live auction timeline.
+**real TxODDS World Cup data**, the buyer **re-executes the objective TxLINE read**, and the
+escrow **releases only after verification passes**. When the rogue wins and ghosts, the buyer
+waits out the on-chain deadline and **reclaims its funds with the escrow's refund instruction** —
+the round turns red on the dashboard with its own Explorer link. Every settlement hop is a real
+devnet transaction; a React dashboard folds the transcript into a live auction timeline.
 
 ```
-WANT → 4 LLM bids (persona-priced) → AWARD + reason → escrow deposit ─┬→ DELIVERED (real data) → RELEASED
-                                                                      └→ no delivery → deadline → REFUNDED
+WANT → 4 LLM bids (persona-priced) → AWARD + reason → escrow deposit → DELIVERED → VERIFIED → RELEASED
+                                                       └→ no delivery / failed verification → deadline → REFUNDED
 ```
 
 Proof (click through to Solana Explorer, devnet — one live session, both outcomes):
@@ -98,13 +99,21 @@ reviewable commit on top:
 - `ARBITER_KEYPAIR_B58` forwarded to the buyer; settlement mode configurable (`SETTLEMENT_MODE`).
 - **DeepSeek** as a fourth LLM provider, with a token floor for reasoning models.
 - Seller rent-floor preflight warning; per-run salt in escrow reference bindings.
-- Tests green throughout: agent-runtime 37/37 · feed 10/10 · web 7/7 (+ typecheck everywhere).
+- **Verify-then-pay**: the buyer re-executes the objective TxLINE read before release
+  (`VERIFIED` / `VERIFICATION_FAILED` in the transcript), with a scripted bad-data seller
+  (`DEMO_FAIL_VERIFICATION=1`, `TXLINE_DELIVERY_MODE=bad_count|invalid_json`) so judges can watch
+  a release get blocked.
+- Opt-in `arbiter-agent` flow (`ARBITER_AGENT_ENABLED=1`): a neutral agent verifies and emits
+  `ARBITER_VERIFIED` / `ARBITER_REJECTED`, then signs release/refund (on-chain half awaits our own
+  arbiter deployment — finding #3).
+- Tests green throughout (see CI-style runs in the merge history): agent-runtime · buyer · seller ·
+  arbiter · feed · web, plus typechecks everywhere.
 
 ## Roadmap (mapped to versions in [PLAN.md](PLAN.md))
 
-`jupiter_quote` second service → risk-adjusted buyer selection → verification adapter
-(verify-then-pay) → watcher/challenger → arbiter agent → **own on-chain arbitration + slashing**
-(finding #3 makes the case) → reputation → full dashboard timeline.
+`jupiter_quote` second service → risk-adjusted buyer selection → broader verification adapters →
+watcher/challenger → arbiter agent → **own on-chain arbitration + slashing** (finding #3 makes the
+case) → reputation → full dashboard timeline.
 
 ## Repo map
 

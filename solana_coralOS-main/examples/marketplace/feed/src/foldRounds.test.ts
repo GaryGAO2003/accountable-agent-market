@@ -12,6 +12,7 @@ const round1: RawMessage[] = [
   { sender: 'seller-premium', text: 'ESCROW_REQUIRED round=1 reference=DKQy seller=7jwB amount=0.0005 deadline=600' },
   { sender: 'buyer-agent', text: 'DEPOSITED round=1 reference=DKQy buyer=47Dp sig=5syz' },
   { sender: 'seller-premium', text: 'DELIVERED round=1 {"coin":"solana","usd":72.33}' },
+  { sender: 'buyer-agent', text: 'VERIFIED round=1 ok=1 code=txline_fixtures_match reason="re-exec matched"' },
   { sender: 'buyer-agent', text: 'RELEASED round=1 sig=3PMa' },
 ]
 
@@ -25,8 +26,41 @@ describe('foldRounds', () => {
     expect(r.escrow?.amountSol).toBe(0.0005)
     expect(r.deposit?.sig).toBe('5syz')
     expect(r.delivered?.data).toEqual({ coin: 'solana', usd: 72.33 })
+    expect(r.verification).toEqual({ ok: true, code: 'txline_fixtures_match', reason: 're-exec matched' })
     expect(r.release?.sig).toBe('3PMa')
     expect(r.status).toBe('settled')
+  })
+
+  it('marks a delivered round as verified before release', () => {
+    const [r] = foldRounds(round1.slice(0, 8), sellers)
+    expect(r.verification?.ok).toBe(true)
+    expect(r.status).toBe('verified')
+  })
+
+  it('marks failed verification as a blocked release', () => {
+    const [r] = foldRounds([
+      ...round1.slice(0, 7),
+      { sender: 'buyer-agent', text: 'VERIFICATION_FAILED round=1 ok=0 code=txline_count_mismatch reason="delivered count differs from re-exec"' },
+    ], sellers)
+    expect(r.verification).toEqual({
+      ok: false,
+      code: 'txline_count_mismatch',
+      reason: 'delivered count differs from re-exec',
+    })
+    expect(r.status).toBe('verification_failed')
+  })
+
+  it('folds arbiter decisions into the verification timeline', () => {
+    const [r] = foldRounds([
+      ...round1.slice(0, 7),
+      { sender: 'arbiter-agent', text: 'ARBITER_REJECTED round=1 ok=0 code=txline_count_mismatch reason="delivered count differs from re-exec"' },
+    ], sellers)
+    expect(r.verification).toEqual({
+      ok: false,
+      code: 'txline_count_mismatch',
+      reason: 'delivered count differs from re-exec',
+    })
+    expect(r.status).toBe('verification_failed')
   })
 
   it('treats ARBITER_RELEASED as a settled release without changing the wire protocol', () => {
@@ -76,6 +110,19 @@ describe('foldRounds', () => {
     const r = foldRounds(msgs).find((r) => r.round === 1)
     expect(r?.status).toBe('refunded')
     expect(r?.refund?.sig).toBe('FAKESIG123')
+  })
+
+  it('handles an arbiter refund-after-rejection round', () => {
+    const msgs: RawMessage[] = [
+      { sender: 'buyer-agent', text: 'WANT round=4 service=txline arg=fixtures budget=0.001' },
+      { sender: 'seller-cheap', text: 'BID round=4 price=0.0002 by=seller-cheap' },
+      { sender: 'buyer-agent', text: 'AWARD round=4 to=seller-cheap' },
+      { sender: 'arbiter-agent', text: 'ARBITER_REJECTED round=4 ok=0 code=invalid_delivery_json reason="delivery is not parseable JSON"' },
+      { sender: 'arbiter-agent', text: 'ARBITER_REFUNDED round=4 sig=9abc settlement=arbiter' },
+    ]
+    const round = foldRounds(msgs).find((r) => r.round === 4)!
+    expect(round.refunded).toBe(true)
+    expect(round.status).toBe('refunded')
   })
 
   it('separates interleaved rounds and sorts ascending', () => {

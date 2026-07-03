@@ -41,6 +41,12 @@ export function RoundCard({ round }: { round: Round }) {
           : <pre className="delivered" data-testid="delivered">{round.delivered.raw}</pre>
       )}
 
+      {round.verification && (
+        <p className={`verification ${round.verification.ok ? 'verification-ok' : 'verification-failed'}`} data-testid="verification">
+          {round.verification.ok ? 'Verified' : 'Verification failed'}: {round.verification.reason}
+        </p>
+      )}
+
       <footer className="settle-row">
         {round.deposit && <SettlementBadge label={`deposit ${round.escrow?.amountSol ?? ''} SOL`} sig={round.deposit.sig} />}
         {round.release && <SettlementBadge label="release" sig={round.release.sig} />}

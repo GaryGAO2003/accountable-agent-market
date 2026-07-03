@@ -14,6 +14,7 @@ describe('deliverService txline-only routing', () => {
 
   afterEach(() => {
     global.fetch = realFetch
+    delete process.env.TXLINE_DELIVERY_MODE
     vi.restoreAllMocks()
   })
 
@@ -59,5 +60,21 @@ describe('deliverService txline-only routing', () => {
     const out = JSON.parse(await deliverService('txline edge 123'))
     expect(out.analysis.call).toContain('A')
     expect(out.analysis.note).toContain('deterministic fallback')
+  })
+
+  it('can script a bad fixtures delivery for the verification-failure demo path', async () => {
+    process.env.TXLINE_DELIVERY_MODE = 'bad_count'
+    global.fetch = vi.fn(async (url: string) => {
+      if (url.endsWith('/auth/guest/start')) return { ok: true, json: async () => ({ token: 'jwt' }) }
+      return { ok: true, json: async () => ([{ FixtureId: 1 }, { FixtureId: 2 }]) }
+    }) as unknown as typeof fetch
+
+    const out = JSON.parse(await deliverService('txline fixtures'))
+    expect(out).toMatchObject({
+      service: 'txline-fixtures',
+      count: 3,
+      demoFailure: 'bad_count',
+    })
+    expect(out.fixtures).toHaveLength(2)
   })
 })

@@ -38,6 +38,8 @@ body { margin: 0; background: var(--bg); color: var(--txt); }
 .pill-settled { color: var(--won); border-color: var(--won); }
 .pill-refunded { color: var(--refund); border-color: var(--refund); }
 .pill-bidding { color: var(--premium); border-color: var(--premium); }
+.pill-verified { color: var(--link); border-color: var(--link); }
+.pill-verification_failed { color: var(--refund); border-color: var(--refund); }
 
 .bids { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
 .bid { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
@@ -50,6 +52,9 @@ body { margin: 0; background: var(--bg); color: var(--txt); }
 
 .reason { color: var(--txt); font-size: 13px; margin: 4px 2px 12px; }
 .delivered { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12px; overflow-x: auto; color: var(--dim); }
+.verification { margin: 8px 2px 0; font-size: 12px; color: var(--dim); }
+.verification-ok { color: var(--link); }
+.verification-failed { color: var(--refund); }
 
 .settle-row { display: flex; gap: 10px; margin-top: 10px; }
 .settle { color: var(--link); text-decoration: none; font-size: 12px; border: 1px solid var(--line); padding: 4px 8px; border-radius: 6px; }

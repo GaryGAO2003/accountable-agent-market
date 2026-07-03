@@ -11,16 +11,17 @@ personas** — `seller-cheap` (low-price volume), `seller-honest` (fair price), 
 (high-confidence premium), and `seller-rogue` (the villain: wins bids, takes the escrow, never
 delivers) — read it over a shared CoralOS thread and each decides *with an LLM* whether and how
 much to bid, down to its configured cost floor. The buyer awards with a stated reason, locks the
-payment in a **Solana escrow**, the winner delivers **real, verified TxODDS World Cup data**, and
-the escrow **releases on delivery** — every hop a real devnet transaction you can open on Solana
-Explorer. When the winner is the rogue and no delivery arrives, the buyer waits out the on-chain
-deadline and **reclaims its funds with the escrow's refund instruction** — the round shows up red
+payment in a **Solana escrow**, the winner delivers **real, verified TxODDS World Cup data**, the
+buyer **re-executes the objective TxLINE read and releases only after verification passes** —
+every settlement hop a real devnet transaction you can open on Solana Explorer. When the winner
+ghosts (the rogue) or the delivery fails verification, the buyer waits out the on-chain deadline
+and **reclaims its funds with the escrow's refund instruction** — the round shows up red
 (`refunded`) on the dashboard with its own Explorer link. Rounds repeat continuously; a React
 dashboard folds the CoralOS transcript into a live auction timeline.
 
 ```
-WANT → 4 LLM bids (persona-priced) → AWARD + reason → escrow deposit ─┬→ DELIVERED (real data) → RELEASED
-                                                                      └→ no delivery → deadline → REFUNDED
+WANT → 4 LLM bids (persona-priced) → AWARD + reason → escrow deposit → DELIVERED → VERIFIED → RELEASED
+                                                       └→ no delivery / failed verification → deadline → REFUNDED
 ```
 
 Everything is autonomous: pricing, bid/no-bid reasoning, winner selection, on-chain settlement.
@@ -65,16 +66,17 @@ slashing, reputation (PLAN.md phases 3–9). The demo now shows both halves: **t
 
 ## Demo storyboard (≈3-minute video, two acts)
 
-**Act 1 — trust works** (~80s)
+**Act 1 — trust works** (~75s)
 1. **Cold open — the dashboard** (15s). Settled rounds on screen. "These are AI agents buying
    verified World Cup data from each other, settling on Solana, right now — no human in the loop."
-2. **One round, end to end** (45s). A new round appears live: the WANT, four bids landing with
+2. **One round, end to end** (40s). A new round appears live: the WANT, four bids landing with
    persona-flavored notes, the buyer's stated award reason, escrow deposit, delivery payload
-   (real fixtures), status flipping to **settled**.
+   (real fixtures), **the buyer re-executing the TxLINE read to verify it**, status flipping to
+   **settled**.
 3. **Proof it's real** (20s). Click the release link → Solana Explorer (devnet): buyer escrow →
-   seller wallet. The delivered JSON is live TxODDS data.
+   seller wallet. The delivered JSON is live TxODDS data — and the buyer checked, not trusted.
 
-**Act 2 — trust broken, money safe** (~70s)
+**Act 2 — trust broken, money safe** (~85s)
 4. **Enter the rogue** (25s). A `refunded` round, red pill: `seller-rogue` — posing as a
    well-reviewed vendor — bid lowest, won ("lowest price with verified reliability", the buyer's
    own words), the escrow funded... and it never delivered. On its container log: *"taking the
@@ -83,10 +85,14 @@ slashing, reputation (PLAN.md phases 3–9). The demo now shows both halves: **t
    reclaims the funds itself: click the **refund** badge → Solana Explorer shows the escrow
    closing back to the buyer. The rogue won two bids and earned **zero**; the honest sellers keep
    accumulating real revenue.
-6. **The pitch** (20s). "In two days of running this market we found six ways agent settlement
+6. **Fraud, not just no-shows** (15s, optional if time). `DEMO_FAIL_VERIFICATION=1` launches a
+   seller that reports a wrong TxLINE fixture count: the buyer's re-exec catches it
+   (`VERIFICATION_FAILED`) and no release happens — bad data is treated like no delivery.
+7. **The pitch** (20s). "In two days of running this market we found six ways agent settlement
    breaks — a squatted arbiter, unpayable wallets, colliding escrows, a refund path nobody wired.
-   Accountability can't be a promise; it has to be the protocol. Roadmap: verify-then-pay, own
-   arbitration, slashing, reputation."
+   Accountability can't be a promise; it has to be the protocol. Shipped: verify-then-pay +
+   deadline refunds (+ an opt-in neutral arbiter agent). Next: own arbitration, slashing,
+   reputation."
 
 **Close** (10s). Repo URL + "clone, add two keys, `docker compose up`, and the market runs."
 
@@ -160,10 +166,13 @@ Buyer wallet: `ByowCmt5bMKXL3t1Mj1rJiismnDgxbkNnHQn5cD9Hc3g` · Seller receive w
   9 rounds, then fell for the polished disguise) — explicit risk/reputation scoring that remembers
   a counterparty's history is Phase 3. Today the rogue can win (and waste) round after round; it
   never profits, but a reputation memory would stop awarding it at all.
-- **No-delivery is now punished** (deadline refund, shipped) — but the buyer still pays on any
-  `DELIVERED` message without checking the payload; `seller-rogue` has a `DELIVER_MODE=junk` knob
-  ready to exercise exactly that gap. Verify-then-pay is Phase 4.
+- **No-delivery is now punished** (deadline refund) and **delivery content is now verified**
+  (objective TxLINE re-exec before release; `DELIVER_MODE=junk` and `TXLINE_DELIVERY_MODE=bad_count`
+  are the built-in attackers that exercise it). Verification covers the TxLINE adapter only;
+  watcher/challenger dispute flow and slashing are later roadmap phases.
 - The in-round refund waits out deadlines ≤120s; longer deadlines log and leave funds refundable
   manually (the on-chain instruction works whenever).
-- Arbiter settlement disabled on the shared devnet program (finding #3) — own deployment is Phase 7.
+- The opt-in `arbiter-agent` (neutral verify + settle, `ARBITER_AGENT_ENABLED=1`) is built and
+  unit-tested, but on-chain arbiter settlement is still blocked by finding #3 on the shared devnet
+  program — own deployment is Phase 7.
 - One service (`txline`); `jupiter_quote` is Phase 1 of the roadmap.

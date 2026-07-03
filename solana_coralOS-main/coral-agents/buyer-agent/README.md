@@ -8,7 +8,16 @@ WANT -> BID* -> AWARD
   -> ESCROW_REQUIRED settlement=arbiter reference=<bound order>
   -> ARBITER_OPENED / DEPOSITED vault=<vault PDA>
   -> DELIVERED
+  -> VERIFIED / VERIFICATION_FAILED
   -> ARBITER_RELEASED
+```
+
+With `ARBITER_AGENT_ENABLED=1`, the buyer delegates the final judgment to `arbiter-agent` instead of
+releasing itself:
+
+```text
+DELIVERED -> ARBITER_REVIEW -> ARBITER_VERIFIED -> ARBITER_RELEASED
+DELIVERED -> ARBITER_REVIEW -> ARBITER_REJECTED  -> optional ARBITER_REFUNDED
 ```
 
 > **CoralOS docs:** these messages ride Coral threads with `@mentions`
@@ -23,16 +32,19 @@ WANT -> BID* -> AWARD
 
 | File | Role |
 |---|---|
-| `src/index.ts` | Market loop: WANT, bid collection, award, arbiter open, delivery wait, release |
+| `src/index.ts` | Market loop: WANT, bid collection, award, arbiter open, delivery wait, verify, release |
 | `src/arbiter.ts` | Arbiter wrapper client: config, vault PDA, open, release |
 | `src/escrow.ts` | Legacy direct base escrow client |
 | `src/guard.ts` | Seller payout binding and legacy payment guards |
+| `src/verify.ts` | Compatibility re-export of the shared TxLINE objective re-exec verifier |
 
 ## Env
 
 `BUYER_KEYPAIR_B58` funds the order. `ARBITER_KEYPAIR_B58` signs arbiter release/refund.
 `SELLER_WALLET` binds the payout wallet. `BUYER_SERVICE` defaults to `txline`, `BUYER_ARG` defaults to
 an `edge <fixtureId>` style request, and `MARKET_SELLERS` controls the competing sellers.
+Set `ARBITER_AGENT_ENABLED=1` to include `ARBITER_AGENT_NAME` in the market thread and send
+`ARBITER_REVIEW` after delivery.
 
 For best-value bid selection set an LLM key — the kit's LLM is **Venice AI** (`LLM_PROVIDER=venice` +
 `VENICE_API_KEY`; new accounts get $50 free via code `IMPERIAL50` at

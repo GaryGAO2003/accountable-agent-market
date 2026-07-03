@@ -18,8 +18,9 @@
 import {
   startCoralAgent, complete, parseJsonReply, loadKeypairB58,
   formatWant, parseBid, parseEscrowRequired, formatAward, formatDeposited,
-  selectBids, pickCheapest, verb, messageRound,
-  type Bid, type EscrowTerms, type CoralAgentContext,
+  parseDelivered, formatVerified, formatArbiterReview,
+  selectBids, pickCheapest,
+  type Bid, type Delivered, type EscrowTerms, type CoralAgentContext,
 } from '@pay/agent-runtime'
 import { PublicKey } from '@solana/web3.js'
 import { makeProgram, deposit, release, refund, escrowPda } from './escrow.js'
@@ -28,6 +29,7 @@ import {
   openArbitrated, arbitrateRelease, arbitratedEscrowPda,
 } from './arbiter.js'
 import { payoutMatches } from './guard.js'
+import { verifyDelivery } from './verify.js'
 
 const RPC = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
 const BUDGET = Number(process.env.BUYER_MAX_SOL ?? '0.001')
@@ -42,6 +44,8 @@ const CYCLE_MS = Number(process.env.CYCLE_INTERVAL_MS ?? '30000')
 const REFUND_WAIT_CAP_SECS = 120
 const SELLERS = (process.env.MARKET_SELLERS ?? 'seller-worldcup,seller-fast,seller-premium')
   .split(',').map((s) => s.trim()).filter(Boolean)
+const ARBITER_AGENT_ENABLED = process.env.ARBITER_AGENT_ENABLED === '1'
+const ARBITER_AGENT_NAME = process.env.ARBITER_AGENT_NAME ?? 'arbiter-agent'
 // F3: the payout wallet the buyer expects (personas share one in the demo). If set, the buyer refuses
 // to deposit to an ESCROW_REQUIRED whose seller= pubkey differs - binding the award to the payout.
 const EXPECTED_SELLER_WALLET = process.env.SELLER_WALLET ?? ''
@@ -95,10 +99,11 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
   const arbiter = SETTLEMENT_MODE === 'arbiter' ? loadKeypairB58('ARBITER_KEYPAIR_B58') : null
   console.error(`[buyer] market buyer - wallet=${buyer.publicKey.toBase58()} budget=${BUDGET} sellers=[${SELLERS.join(',')}]`)
 
-  for (const s of SELLERS) {
+  const threadParticipants = ARBITER_AGENT_ENABLED ? [...SELLERS, ARBITER_AGENT_NAME] : SELLERS
+  for (const s of threadParticipants) {
     try { await ctx.waitForAgent(s, 8000) } catch { /* seller may already be present */ }
   }
-  const thread = await ctx.createThread('market', SELLERS)
+  const thread = await ctx.createThread('market', threadParticipants)
   const program = await makeProgram(buyer, RPC)
   if (arbiter) {
     await ensureArbiterConfig(buyer, arbiter.publicKey, RPC)
@@ -175,12 +180,41 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
         thread, [winner.by],
       )
 
-      const delivered = await waitFor(ctx, round, (t) => {
-        const r = messageRound(t)
-        return verb(t) === 'DELIVERED' && r != null ? { round: r } : null
-      }, 30_000)
+      const delivered = await waitFor<Delivered>(ctx, round, parseDelivered, 30_000)
 
       if (delivered) {
+        if (ARBITER_AGENT_ENABLED) {
+          if (requestedSettlement !== 'arbiter' || !vault || !arbiter) {
+            console.error(`[buyer] round ${round}: arbiter-agent mode requires settlement=arbiter - funds stay in escrow`)
+            await sleep(CYCLE_MS)
+            continue
+          }
+          await ctx.send(
+            formatArbiterReview({
+              round,
+              service: SERVICE,
+              arg,
+              reference: terms.reference,
+              seller: terms.seller,
+              payer: buyer.publicKey.toBase58(),
+              raw: delivered.raw,
+            }),
+            thread,
+            [ARBITER_AGENT_NAME],
+          )
+          console.error(`[buyer] round ${round}: delegated verification + release to ${ARBITER_AGENT_NAME}`)
+          await sleep(CYCLE_MS)
+          continue
+        }
+
+        const verification = await verifyDelivery({ service: SERVICE, arg }, delivered.raw)
+        await ctx.send(formatVerified({ round, ...verification }), thread, [winner.by])
+        if (!verification.ok) {
+          console.error(`[buyer] round ${round}: verification failed (${verification.code}) - ${verification.reason}`)
+          console.error(`[buyer] round ${round}: funds stay in escrow, refundable after the deadline`)
+          await sleep(CYCLE_MS)
+          continue
+        }
         const releaseSig = requestedSettlement === 'arbiter' && arbiter
           ? await arbitrateRelease(makeArbiter(arbiter, RPC), arbiter, seller, reference)
           : await release(program, buyer, seller, reference)

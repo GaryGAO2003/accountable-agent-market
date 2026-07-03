@@ -7,7 +7,7 @@ export interface RoundBid {
   note?: string
 }
 
-export type RoundStatus = 'bidding' | 'awarded' | 'deposited' | 'delivered' | 'settled' | 'refunded'
+export type RoundStatus = 'bidding' | 'awarded' | 'deposited' | 'delivered' | 'verified' | 'verification_failed' | 'settled' | 'refunded'
 
 export interface Round {
   round: number
@@ -18,6 +18,7 @@ export interface Round {
   escrow?: { reference: string; seller: string; amountSol: number; deadlineSecs: number }
   deposit?: { sig: string; buyer: string }
   delivered?: { raw: string; data?: unknown }
+  verification?: { ok: boolean; code: string; reason: string }
   release?: { sig: string }
   refunded?: boolean
   refund?: { sig: string }

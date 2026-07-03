@@ -106,9 +106,10 @@ changes there were lost; only the doc reached the Test branch), `coral_info.txt`
 - **v0.2 — Phase 2 (light):** persona knobs (`FLOOR_SOL`/`PERSONA`/`SERVICES`) already cover price/voice;
   extend only if the demo needs more.
 - **v0.3 — Phase 3 + 4:** buyer risk-adjusted selection (price/confidence/latency/reputation score, rationale
-  emitted into CoralOS messages) + verification adapter (txline first, jupiter second).
-- **v0.4 — Phase 5 + 6:** watcher/challenger + arbiter agent (deterministic, evidence-backed; wired to the
-  existing arbiter settlement client).
+  emitted into CoralOS messages) + broaden verification adapters. The first TxLINE objective re-exec
+  adapter is now wired into buyer release; Jupiter remains the next service/verifier pair.
+- **v0.4 — Phase 5 + 6:** arbiter-agent is now wired as an opt-in third-party verifier/releaser for
+  TxLINE; watcher/challenger remains future production-style monitoring.
 - **v0.5 — Phase 7:** on-chain slashing — decision point: extend the Anchor programs (Rust + redeploy) vs.
   demo-scope simulation via arbiter refund + reputation penalty. Decide after v0.4.
 - **v0.6 — Phase 8 + 9:** reputation + full dashboard timeline (rationale, verification, challenges,

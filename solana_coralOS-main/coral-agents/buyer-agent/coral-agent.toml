@@ -25,6 +25,8 @@ BUYER_SERVICE = { type = "string", default = "txline", description = "Service to
 BUYER_ARG = { type = "string", default = "edge 18175397", description = "Argument passed to the winning seller's deliverService" }
 BUYER_ARGS = { type = "string", default = "", description = "Comma-separated args to rotate through, one per round (overrides BUYER_ARG)" }
 MARKET_SELLERS = { type = "string", default = "seller-worldcup,seller-fast,seller-premium", description = "Comma-separated seller names in the market thread" }
+ARBITER_AGENT_ENABLED = { type = "string", default = "", description = "Set to 1 to delegate objective re-exec + release/refund to arbiter-agent" }
+ARBITER_AGENT_NAME = { type = "string", default = "arbiter-agent", description = "CoralOS agent name for the neutral arbiter" }
 BID_WINDOW_MS = { type = "f64", default = 5000, description = "How long to collect competing bids each round" }
 CYCLE_INTERVAL_MS = { type = "f64", default = 30000, description = "Delay between market rounds" }
 SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL (devnet)" }
