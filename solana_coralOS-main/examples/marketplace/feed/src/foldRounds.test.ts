@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { foldRounds, type RawMessage } from './foldRounds.js'
 
-const sellers = ['seller-cheap', 'seller-premium', 'seller-lazy']
+const sellers = ['seller-cheap', 'seller-honest', 'seller-premium']
 
 // A full happy-path round, verbatim from a real devnet run (sigs truncated).
 const round1: RawMessage[] = [
@@ -29,9 +29,20 @@ describe('foldRounds', () => {
     expect(r.status).toBe('settled')
   })
 
+  it('treats ARBITER_RELEASED as a settled release without changing the wire protocol', () => {
+    const msgs = round1.map((m) =>
+      m.text.startsWith('RELEASED ')
+        ? { ...m, text: m.text.replace('RELEASED ', 'ARBITER_RELEASED ') }
+        : m,
+    )
+    const [r] = foldRounds(msgs, sellers)
+    expect(r.release?.sig).toBe('3PMa')
+    expect(r.status).toBe('settled')
+  })
+
   it('marks the non-bidding seller as declined (self-selection)', () => {
     const [r] = foldRounds(round1, sellers)
-    expect(r.declined).toEqual(['seller-lazy']) // only cheap + premium bid on coingecko
+    expect(r.declined).toEqual(['seller-honest']) // only cheap + premium bid on coingecko
   })
 
   it('dedupes a seller that bids twice (last write kept by first-wins guard)', () => {

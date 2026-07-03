@@ -87,7 +87,7 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
       const raw = text.replace(/^DELIVERED\s+round=\d+\s*/i, '').trim()
       round.delivered = { raw, data: tryJson(raw) }
       if (round.status !== 'settled') round.status = 'delivered'
-    } else if (v === 'RELEASED' && r != null) {
+    } else if ((v === 'RELEASED' || v === 'ARBITER_RELEASED') && r != null) {
       const round = get(r)
       const sig = text.match(/sig=(\S+)/)?.[1]
       if (sig) round.release = { sig }
