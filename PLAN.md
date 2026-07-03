@@ -23,6 +23,11 @@ changes there were lost; only the doc reached the Test branch), `coral_info.txt`
 
 ## v0.1 scope — restore progress.md "Recent Changes", verified by tests
 
+> **Status: SHIPPED 2026-07-03** — tag `v0.1` on `main`. All gates green: agent-runtime 35/35,
+> feed 9/9 + typecheck, marketplace typecheck, web 5/5 + typecheck, TOML ×3 parsed. Task A's test
+> file was adopted verbatim from the teammate's upload on `origin/Test` (bbeb66b). Repo renamed to
+> `accountable-agent-market` (old URL redirects).
+
 ### Task A — feed folds `ARBITER_RELEASED` (fixes the live-demo bug)
 - Files: `examples/marketplace/feed/src/foldRounds.ts`, `foldRounds.test.ts`.
 - Change: extend the `v === 'RELEASED'` arm to also accept `'ARBITER_RELEASED'` — same `sig=(\S+)`
