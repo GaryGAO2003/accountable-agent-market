@@ -32,8 +32,13 @@ const awarded = new Map<string, { round: number } & Quote>()
 let program: Program | null = null
 const escrowProgram = async (): Promise<Program> => (program ??= await makeProgram(RPC))
 
+// Salt the binding per run: without it, identical order terms across sessions reproduce the same
+// reference, so the escrow PDA collides with a prior run's still-open escrow and the deposit fails
+// (System error 0x0, account already in use). The salt keeps references unique per seller process.
+const RUN_SALT = Date.now().toString(36)
+
 function boundReference(order: Quote & { round: number }): string {
-  const preimage = `txodds-coral:${order.round}:${order.service}:${order.arg}:${SELLER_WALLET}:${order.priceSol}`
+  const preimage = `txodds-coral:${RUN_SALT}:${order.round}:${order.service}:${order.arg}:${SELLER_WALLET}:${order.priceSol}`
   return new PublicKey(createHash('sha256').update(preimage).digest()).toBase58()
 }
 

@@ -40,6 +40,10 @@ operation we hit, diagnosed, and fixed:
 4. **The seller that couldn't be paid** — a brand-new receive wallet can't accept a payout below
    Solana's rent floor (~0.00089 SOL); micro-releases fail wholesale and every round stalls at
    DELIVERED. (Fixed: launch preflight + one-off top-up.)
+5. **The payment reference that came back to haunt us** — the escrow reference is
+   `sha256(round:service:arg:wallet:price)` with **no session component**, so a re-run reproduces
+   identical references and the escrow PDA collides with the previous run's still-open escrow
+   (System error 0x0): 16 straight rounds failed to deposit. (Fixed: per-run salt in the binding.)
 
 That is the pitch: **agent markets break in ways humans won't be watching for.** Settlement rails
 must be verifiable and accountable by construction — verify-then-pay, self-owned arbitration,
