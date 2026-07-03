@@ -102,8 +102,15 @@ IPv6 resets). `TRACE=1` in .env logs Explorer links per settlement.
 
 ## Verified live artifacts (2026-07-03)
 
-- Release (escrow → seller, devnet):
-  `https://explorer.solana.com/tx/3LvrxNdPyfnTf2NNC1aSD4WnUU6qEyx3xJ27myrKkGDzKT84nTqoBLELAREJpcbe3C1L4VzmuRWx5FhrdfnBQr6o?cluster=devnet`
+Post-fix demo session — settled from round 1, with different winners (the LLM buyer weighs
+persona notes, not just price):
+
+- Round 1, won by **seller-honest** (0.0005 over cheap's 0.0003) — release:
+  `https://explorer.solana.com/tx/2nhjgoR8W3gJjm8Uxas1WtQbf722xsTdYcRBwxo5zh6gRYNqq1RoTZp2fA6CqwsvLy3LCXJVnu31ekh6n1T1mHrC?cluster=devnet`
+- Round 2, won by **seller-cheap** — release:
+  `https://explorer.solana.com/tx/261BtQLUQv6WtPkQ9iokAXdycMLgXVVjv2VH1eE6yGXwd4Eojiy3cDqATpA4ri4WAFxYLHeApVviJz7BnGyvhEFr?cluster=devnet`
+- Round 3, won by **seller-honest** — release:
+  `https://explorer.solana.com/tx/2P5brUpoVGicuWuzwbpF8MgEUiZcjYSAQwBGEaE3ZXxAmXBiKTZH7NaBpxBktKVuW3dWiWkUPPAv14uUxZ7bx7hd?cluster=devnet`
 - Escrow deposit example:
   `https://explorer.solana.com/tx/37FxRPATsDXjJnmUmduJpCdjJWZkHkUuq6DDYfDprq721fxET9WiD7mqRmQjVk2epXvnWcs16KgqYZF5hMYQCD94?cluster=devnet`
 - Buyer wallet: `ByowCmt5bMKXL3t1Mj1rJiismnDgxbkNnHQn5cD9Hc3g` · Seller receive wallet:
@@ -111,7 +118,8 @@ IPv6 resets). `TRACE=1` in .env logs Explorer links per settlement.
 
 ## Current limits (honest)
 
-- Buyer selection is lowest-price (cheap wins every round) — risk-adjusted selection is Phase 3.
+- Buyer selection is a single LLM judgment over price + bid notes (it does pick honest over cheap
+  at times) — explicit risk/reputation scoring with transparent rationale is Phase 3.
 - No delivery verification yet — the buyer pays on any delivery; verify-then-pay is Phase 4.
 - Arbiter settlement disabled on the shared devnet program (finding #3) — own deployment is Phase 7.
 - One service (`txline`); `jupiter_quote` is Phase 1 of the roadmap.
