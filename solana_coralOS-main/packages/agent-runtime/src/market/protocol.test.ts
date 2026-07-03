@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   formatWant, parseWant, formatBid, parseBid, formatAward, parseAward,
   formatEscrowRequired, parseEscrowRequired, formatDeposited, parseDeposited,
+  formatDelivered, parseDelivered, formatVerified, parseVerified,
+  formatArbiterReview, parseArbiterReview, formatArbiterDecision, parseArbiterDecision,
   selectBids, pickCheapest, verb, messageRound,
   type Bid,
 } from './protocol.js'
@@ -44,6 +46,86 @@ describe('AWARD + ESCROW_REQUIRED round-trip', () => {
   it('DEPOSITED', () => {
     const d = { round: 9, reference: 'R3f', buyer: 'BuYeRwa11et', sig: '5h2abc', settlement: 'arbiter' as const, vault: 'VaU1t', arbiter: 'ArB1t3r' }
     expect(parseDeposited(formatDeposited(d))).toEqual(d)
+  })
+})
+
+describe('delivery verification round-trip', () => {
+  it('DELIVERED carries the raw payload for buyer-side verification', () => {
+    const raw = '{"service":"txline-fixtures","count":2}'
+    const msg = formatDelivered({ round: 9, raw })
+    expect(msg).toBe(`DELIVERED round=9 ${raw}`)
+    expect(parseDelivered(msg)).toEqual({ round: 9, raw })
+  })
+
+  it('VERIFIED records objective re-exec evidence', () => {
+    const msg = formatVerified({
+      round: 9,
+      ok: true,
+      code: 'txline_fixtures_match',
+      reason: 'fixtures snapshot matched',
+    })
+    expect(parseVerified(msg)).toEqual({
+      round: 9,
+      ok: true,
+      code: 'txline_fixtures_match',
+      reason: 'fixtures snapshot matched',
+    })
+  })
+
+  it('VERIFICATION_FAILED records why release is blocked', () => {
+    const msg = formatVerified({
+      round: 9,
+      ok: false,
+      code: 'count_mismatch',
+      reason: 'delivered count differs from re-exec',
+    })
+    expect(verb(msg)).toBe('VERIFICATION_FAILED')
+    expect(parseVerified(msg)).toEqual({
+      round: 9,
+      ok: false,
+      code: 'count_mismatch',
+      reason: 'delivered count differs from re-exec',
+    })
+  })
+})
+
+describe('arbiter review round-trip', () => {
+  it('ARBITER_REVIEW carries objective evidence for a third-party arbiter agent', () => {
+    const review = {
+      round: 9,
+      service: 'txline',
+      arg: 'edge 123',
+      reference: 'Ref111',
+      seller: 'Seller111',
+      payer: 'Buyer111',
+      raw: '{"service":"txline-edge","fixtureId":"123"}',
+    }
+    expect(parseArbiterReview(formatArbiterReview(review))).toEqual(review)
+  })
+
+  it('ARBITER_VERIFIED / ARBITER_REJECTED records the arbiter decision', () => {
+    const ok = formatArbiterDecision({
+      round: 9,
+      ok: true,
+      code: 'txline_edge_match',
+      reason: 're-exec matched',
+    })
+    expect(verb(ok)).toBe('ARBITER_VERIFIED')
+    expect(parseArbiterDecision(ok)).toEqual({
+      round: 9,
+      ok: true,
+      code: 'txline_edge_match',
+      reason: 're-exec matched',
+    })
+
+    const rejected = formatArbiterDecision({
+      round: 10,
+      ok: false,
+      code: 'txline_count_mismatch',
+      reason: 'delivered count differs from re-exec',
+    })
+    expect(verb(rejected)).toBe('ARBITER_REJECTED')
+    expect(parseArbiterDecision(rejected)?.ok).toBe(false)
   })
 })
 

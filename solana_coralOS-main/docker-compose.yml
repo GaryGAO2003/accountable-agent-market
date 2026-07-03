@@ -38,6 +38,9 @@ services:
       # The TxLINE token the seller uses to fetch verified World Cup odds (mint with `npm run mint`).
       - TXLINE_API_KEY=${TXLINE_API_KEY}
       - TXLINE_BASE_URL=${TXLINE_BASE_URL:-}
+      - ARBITER_AGENT_ENABLED=${ARBITER_AGENT_ENABLED:-}
+      - ARBITER_AGENT_NAME=${ARBITER_AGENT_NAME:-arbiter-agent}
+      - ARBITER_REFUND_ON_REJECT=${ARBITER_REFUND_ON_REJECT:-}
       # Set TRACE=1 to log coral_* calls + on-chain Explorer links in the agents.
       - TRACE=${TRACE:-}
     volumes:

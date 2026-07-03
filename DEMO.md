@@ -11,12 +11,13 @@ personas** — `seller-cheap` (low-price volume), `seller-honest` (fair price), 
 (high-confidence premium) — read it over a shared CoralOS thread and each decides *with an LLM*
 whether and how much to bid, down to its configured cost floor. The buyer awards with a stated
 reason, locks the payment in a **Solana escrow**, the winner delivers **real, verified TxODDS World
-Cup data**, and the escrow **releases on delivery** — every hop a real devnet transaction you can
-open on Solana Explorer. Rounds repeat continuously; a React dashboard folds the CoralOS transcript
-into a live auction timeline.
+Cup data**, the buyer re-executes the objective TxLINE read, and the escrow **releases only after
+verification passes** — every settlement hop a real devnet transaction you can open on Solana
+Explorer. Rounds repeat continuously; a React dashboard folds the CoralOS transcript into a live
+auction timeline.
 
 ```
-WANT → 3 LLM bids (persona-priced) → AWARD + reason → escrow deposit → DELIVERED (real data) → RELEASED
+WANT → 3 LLM bids → AWARD + reason → escrow deposit → DELIVERED → VERIFIED → RELEASED
 ```
 
 Everything is autonomous: pricing, bid/no-bid reasoning, winner selection, on-chain settlement.
@@ -55,13 +56,19 @@ slashing, reputation (PLAN.md phases 3–9).
    buying verified World Cup data from each other, settling on Solana, right now."
 2. **One round, end to end** (60s). A new round appears live: the WANT, three bids landing with
    persona-flavored notes (cheap undercuts at 0.0003, honest at 0.0005, premium at 0.0008), the
-   award reason, escrow deposit, delivery payload (real fixtures), status flipping to **settled**.
-3. **Proof it's real** (30s). Click the release link → Solana Explorer (devnet) shows the
+   award reason, escrow deposit, delivery payload (real fixtures), objective re-exec verification,
+   status flipping to **settled**.
+3. **Failed verification** (25s). Relaunch with `DEMO_FAIL_VERIFICATION=1`: a scripted bad seller
+   reports the wrong TxLINE fixture count, the buyer emits `VERIFICATION_FAILED`, and no release link
+   appears.
+4. **Neutral arbiter path** (25s). Relaunch with `ARBITER_AGENT_ENABLED=1`: the buyer sends
+   `ARBITER_REVIEW`, the arbiter agent emits `ARBITER_VERIFIED`, then signs `ARBITER_RELEASED`.
+5. **Proof it's real** (30s). Click the release link → Solana Explorer (devnet) shows the
    transaction: buyer escrow → seller wallet. Show the delivered JSON = live TxODDS data.
-4. **The accountability story** (40s). Tell finding #3 (the squatted arbiter): "in one day of
+6. **The accountability story** (40s). Tell finding #3 (the squatted arbiter): "in one day of
    running this market, settlement failed four different ways — this is why agent commerce needs
    accountable rails, and here's our roadmap: verification, own arbitration, slashing, reputation."
-5. **Close** (10s). Repo URL + "clone, add two keys, `docker compose up`, and the market runs."
+7. **Close** (10s). Repo URL + "clone, add two keys, `docker compose up`, and the market runs."
 
 Live fallback if recording during the pitch: the dashboard keeps producing settled rounds
 (~40s/round) — let it run in a corner of the screen.
@@ -120,6 +127,8 @@ persona notes, not just price):
 
 - Buyer selection is a single LLM judgment over price + bid notes (it does pick honest over cheap
   at times) — explicit risk/reputation scoring with transparent rationale is Phase 3.
-- No delivery verification yet — the buyer pays on any delivery; verify-then-pay is Phase 4.
+- Delivery verification currently covers the TxLINE objective re-exec adapter; opt-in arbiter-agent
+  mode moves that judgment into a neutral CoralOS agent. Watcher/challenger dispute flow and slashing
+  are still later roadmap phases.
 - Arbiter settlement disabled on the shared devnet program (finding #3) — own deployment is Phase 7.
 - One service (`txline`); `jupiter_quote` is Phase 1 of the roadmap.

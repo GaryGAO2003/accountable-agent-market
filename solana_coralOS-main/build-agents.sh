@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Build the two agent images coral-server launches for the CoralOS round (from repo root so they bundle
-# packages/). Run once before `docker compose up` — only needed if you change the agents; the demo ships
+# Build the agent images coral-server launches for the CoralOS round (from repo root so they bundle
+# packages/). Run once before `docker compose up` -- only needed if you change the agents; the demo ships
 # against the pre-built images.
 #
-# Usage: bash build-agents.sh           (build both)
+# Usage: bash build-agents.sh           (build all)
 #        bash build-agents.sh seller    (seller-agent only)
 #        bash build-agents.sh buyer     (buyer-agent only)
+#        bash build-agents.sh arbiter   (arbiter-agent only)
 
 set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -22,16 +23,24 @@ build_buyer() {
   echo "    buyer-agent:0.1.0 done"
 }
 
+build_arbiter() {
+  echo "==> Building arbiter-agent:0.1.0"
+  docker build -f "$ROOT/coral-agents/arbiter-agent/Dockerfile" -t arbiter-agent:0.1.0 "$ROOT"
+  echo "    arbiter-agent:0.1.0 done"
+}
+
 case "${1:-all}" in
   seller) build_seller ;;
   buyer)  build_buyer ;;
+  arbiter) build_arbiter ;;
   all)
     build_seller
     build_buyer
+    build_arbiter
     echo ""
-    echo "Both agent images built. Run a CoralOS round:"
+    echo "Agent images built. Run a CoralOS round:"
     echo "  docker compose up -d coral"
     echo "  cd examples/txodds && npm run coral"
     ;;
-  *) echo "Usage: bash build-agents.sh [seller|buyer|all]"; exit 1 ;;
+  *) echo "Usage: bash build-agents.sh [seller|buyer|arbiter|all]"; exit 1 ;;
 esac

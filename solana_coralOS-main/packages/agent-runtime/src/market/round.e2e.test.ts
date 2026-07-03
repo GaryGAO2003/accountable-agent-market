@@ -1,8 +1,9 @@
 /**
  * Protocol round e2e - drives a full WANT -> BID -> AWARD -> ESCROW_REQUIRED -> DEPOSITED -> DELIVERED ->
- * RELEASED conversation through the REAL wire format + selection, against an in-memory thread and a
- * fake escrow ledger. No devnet, no network - so CI covers the settlement *sequence* the agents speak
- * (and the `reference` threading + escrow lifecycle), not just the individual parsers in isolation.
+ * VERIFIED -> RELEASED conversation through the REAL wire format + selection, against an in-memory
+ * thread and a fake escrow ledger. No devnet, no network - so CI covers the verify-then-pay sequence
+ * the agents speak (and the `reference` threading + escrow lifecycle), not just the individual parsers
+ * in isolation.
  *
  * Here the sellers bid from a fixture so the focus is the end-to-end protocol composition (the wire
  * format + selection + the `reference` threading), not the bidding economics.
@@ -11,6 +12,7 @@ import { describe, it, expect } from 'vitest'
 import {
   formatWant, parseWant, formatBid, parseBid, formatAward, parseAward,
   formatEscrowRequired, parseEscrowRequired, formatDeposited, parseDeposited,
+  formatDelivered, parseDelivered, formatVerified, parseVerified,
   selectBids, pickCheapest, verb,
   type Bid,
 } from './protocol.js'
@@ -44,7 +46,7 @@ const SELLERS = {
 }
 
 describe('market round e2e - the full settlement sequence over the real protocol', () => {
-  it('runs WANT -> BIDx2 -> AWARD -> ESCROW_REQUIRED -> DEPOSITED -> DELIVERED -> RELEASED', () => {
+  it('runs WANT -> BIDx2 -> AWARD -> ESCROW_REQUIRED -> DEPOSITED -> DELIVERED -> VERIFIED -> RELEASED', () => {
     const thread: string[] = []
     const escrow = new FakeEscrow()
     const round = 1
@@ -85,19 +87,46 @@ describe('market round e2e - the full settlement sequence over the real protocol
     const dep = parseDeposited(thread.at(-1)!)!
     expect(dep.reference).toBe(reference) // the reference threads all the way through
     expect(escrow.isFunded(dep.buyer, sellerWallet, dep.reference, terms.amountSol)).toBe(true)
-    thread.push(`DELIVERED round=${round} {"coin":"solana","usd":150}`)
+    thread.push(formatDelivered({ round, raw: '{"service":"txline-fixtures","count":2}' }))
 
-    // buyer sees delivery and releases the escrow to the seller
-    expect(verb(thread.at(-1)!)).toBe('DELIVERED')
+    // buyer sees delivery, verifies by objective re-exec, then releases the escrow to the seller
+    const delivered = parseDelivered(thread.at(-1)!)!
+    expect(delivered.raw).toContain('txline-fixtures')
+    thread.push(formatVerified({ round, ok: true, code: 'txline_fixtures_match', reason: 're-exec matched' }))
+    const verified = parseVerified(thread.at(-1)!)!
+    expect(verified.ok).toBe(true)
     escrow.release(BUYER, sellerWallet, reference)
     thread.push(`RELEASED round=${round} sig=SIGrelease`)
 
     // -- invariants over the whole round --
     expect(thread.map((t) => verb(t))).toEqual([
-      'WANT', 'BID', 'BID', 'AWARD', 'ESCROW_REQUIRED', 'DEPOSITED', 'DELIVERED', 'RELEASED',
+      'WANT', 'BID', 'BID', 'AWARD', 'ESCROW_REQUIRED', 'DEPOSITED', 'DELIVERED', 'VERIFIED', 'RELEASED',
     ])
     expect(escrow.balance(sellerWallet)).toBeCloseTo(winner.priceSol, 9) // seller paid exactly its bid
     expect(escrow.balance(SELLERS['seller-premium'].wallet)).toBe(0)     // the loser is never paid
+  })
+
+  it('does not release escrow when objective re-exec fails', () => {
+    const thread: string[] = []
+    const escrow = new FakeEscrow()
+    const round = 2
+    const sellerWallet = SELLERS['seller-cheap'].wallet
+    const reference = 'REFbadDelivery'
+
+    escrow.deposit(BUYER, sellerWallet, reference, 0.0002)
+    thread.push(formatDelivered({ round, raw: '{"service":"txline-fixtures","count":999}' }))
+    thread.push(formatVerified({
+      round,
+      ok: false,
+      code: 'txline_count_mismatch',
+      reason: 'delivered count differs from re-exec',
+    }))
+
+    const verified = parseVerified(thread.at(-1)!)!
+    if (verified.ok) escrow.release(BUYER, sellerWallet, reference)
+
+    expect(thread.map((t) => verb(t))).toEqual(['DELIVERED', 'VERIFICATION_FAILED'])
+    expect(escrow.balance(sellerWallet)).toBe(0)
   })
 
   it('the seller refuses delivery when the escrow names a different seller (isFunded gate)', () => {

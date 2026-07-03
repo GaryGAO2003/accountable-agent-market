@@ -6,6 +6,7 @@
  */
 import {
   verb, messageRound, parseWant, parseBid, parseAward, parseEscrowRequired, parseDeposited,
+  parseDelivered, parseVerified, parseArbiterDecision,
 } from '@pay/agent-runtime'
 
 export interface RawMessage {
@@ -19,7 +20,7 @@ export interface RoundBid {
   note?: string
 }
 
-export type RoundStatus = 'bidding' | 'awarded' | 'deposited' | 'delivered' | 'settled' | 'refunded'
+export type RoundStatus = 'bidding' | 'awarded' | 'deposited' | 'delivered' | 'verified' | 'verification_failed' | 'settled' | 'refunded'
 
 export interface Round {
   round: number
@@ -31,6 +32,7 @@ export interface Round {
   escrow?: { reference: string; seller: string; amountSol: number; deadlineSecs: number }
   deposit?: { sig: string; buyer: string }
   delivered?: { raw: string; data?: unknown }
+  verification?: { ok: boolean; code: string; reason: string }
   release?: { sig: string }
   refunded?: boolean
   status: RoundStatus
@@ -80,19 +82,39 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
     const dep = parseDeposited(text)
     if (dep) { const r = get(dep.round); r.deposit = { sig: dep.sig, buyer: dep.buyer }; if (r.status !== 'settled') r.status = 'deposited'; continue }
 
-    const v = verb(text)
-    const r = messageRound(text)
-    if (v === 'DELIVERED' && r != null) {
-      const round = get(r)
-      const raw = text.replace(/^DELIVERED\s+round=\d+\s*/i, '').trim()
+    const delivered = parseDelivered(text)
+    if (delivered) {
+      const round = get(delivered.round)
+      const raw = delivered.raw
       round.delivered = { raw, data: tryJson(raw) }
       if (round.status !== 'settled') round.status = 'delivered'
-    } else if ((v === 'RELEASED' || v === 'ARBITER_RELEASED') && r != null) {
+      continue
+    }
+
+    const verified = parseVerified(text)
+    if (verified) {
+      const round = get(verified.round)
+      round.verification = { ok: verified.ok, code: verified.code, reason: verified.reason }
+      if (round.status !== 'settled') round.status = verified.ok ? 'verified' : 'verification_failed'
+      continue
+    }
+
+    const arbiterDecision = parseArbiterDecision(text)
+    if (arbiterDecision) {
+      const round = get(arbiterDecision.round)
+      round.verification = { ok: arbiterDecision.ok, code: arbiterDecision.code, reason: arbiterDecision.reason }
+      if (round.status !== 'settled') round.status = arbiterDecision.ok ? 'verified' : 'verification_failed'
+      continue
+    }
+
+    const v = verb(text)
+    const r = messageRound(text)
+    if ((v === 'RELEASED' || v === 'ARBITER_RELEASED') && r != null) {
       const round = get(r)
       const sig = text.match(/sig=(\S+)/)?.[1]
       if (sig) round.release = { sig }
       round.status = 'settled'
-    } else if (v === 'REFUNDED' && r != null) {
+    } else if ((v === 'REFUNDED' || v === 'ARBITER_REFUNDED') && r != null) {
       const round = get(r)
       round.refunded = true
       round.status = 'refunded'

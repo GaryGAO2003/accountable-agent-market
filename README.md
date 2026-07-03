@@ -13,11 +13,12 @@ One **buyer agent** broadcasts a need over a shared CoralOS thread. Three **LLM 
 — `seller-cheap` (low-price volume), `seller-honest` (fair price), `seller-premium`
 (high-confidence premium) — each decide with an LLM whether and how much to bid, bounded by their
 cost floors. The buyer awards with a stated reason, locks payment in a **Solana escrow**, the
-winner delivers **real TxODDS World Cup data**, and the escrow **releases on delivery**. Every hop
-is a real devnet transaction; a React dashboard folds the transcript into a live auction timeline.
+winner delivers **real TxODDS World Cup data**, the buyer **re-executes the objective TxLINE read**,
+and the escrow releases only after verification passes. Every settlement hop is a real devnet
+transaction; a React dashboard folds the transcript into a live auction timeline.
 
 ```
-WANT → 3 LLM bids (persona-priced) → AWARD + reason → escrow deposit → DELIVERED (real data) → RELEASED
+WANT → 3 LLM bids → AWARD + reason → escrow deposit → DELIVERED → VERIFIED → RELEASED
 ```
 
 Proof (click through to Solana Explorer, devnet):
@@ -81,13 +82,17 @@ reviewable commit on top:
 - `ARBITER_KEYPAIR_B58` forwarded to the buyer; settlement mode configurable (`SETTLEMENT_MODE`).
 - **DeepSeek** as a fourth LLM provider, with a token floor for reasoning models.
 - Seller rent-floor preflight warning; per-run salt in escrow reference bindings.
-- Tests green throughout: agent-runtime 37/37 · feed 9/9 · web 5/5 (+ typecheck everywhere).
+- TxLINE objective re-exec verification before release (`VERIFIED` / `VERIFICATION_FAILED` in the transcript).
+- Scripted failed-verification demo mode (`DEMO_FAIL_VERIFICATION=1`) so judges can see release blocked.
+- Opt-in `arbiter-agent` flow (`ARBITER_AGENT_ENABLED=1`) so a neutral agent emits
+  `ARBITER_VERIFIED` / `ARBITER_REJECTED` and signs release/refund.
+- Tests green in the touched packages: agent-runtime 43/43 · buyer 17/17 · seller 17/17 · arbiter 2/2 · feed 13/13 · web 6/6.
 
 ## Roadmap (mapped to versions in [PLAN.md](PLAN.md))
 
-`jupiter_quote` second service → risk-adjusted buyer selection → verification adapter
-(verify-then-pay) → watcher/challenger → arbiter agent → **own on-chain arbitration + slashing**
-(finding #3 makes the case) → reputation → full dashboard timeline.
+`jupiter_quote` second service → risk-adjusted buyer selection → broader verification adapters →
+watcher/challenger → arbiter agent → **own on-chain arbitration + slashing** (finding #3 makes the
+case) → reputation → full dashboard timeline.
 
 ## Repo map
 

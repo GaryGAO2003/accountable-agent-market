@@ -8,8 +8,10 @@
 import { complete, parseJsonReply } from '@pay/agent-runtime'
 
 const TXLINE_BASE = process.env.TXLINE_BASE_URL || 'https://txline-dev.txodds.com'
+const deliveryMode = (): string => (process.env.TXLINE_DELIVERY_MODE ?? 'normal').trim().toLowerCase()
 
 export async function deliverService(request: string): Promise<string> {
+  if (deliveryMode() === 'invalid_json') return 'not-json-for-verification-demo'
   const [first, ...rest] = request.trim().split(/\s+/).filter(Boolean)
   const service = (first ?? 'txline').toLowerCase()
   if (service !== 'txline') {
@@ -49,7 +51,13 @@ async function txlineService(request: string): Promise<string> {
     default: {
       const fixtures = await txlineGet('/api/fixtures/snapshot')
       const list = Array.isArray(fixtures) ? fixtures : []
-      return JSON.stringify({ service: 'txline-fixtures', count: list.length, fixtures: list.slice(0, 10) })
+      const badCount = deliveryMode() === 'bad_count'
+      return JSON.stringify({
+        service: 'txline-fixtures',
+        count: badCount ? list.length + 1 : list.length,
+        fixtures: list.slice(0, 10),
+        ...(badCount ? { demoFailure: 'bad_count' } : {}),
+      })
     }
   }
 }

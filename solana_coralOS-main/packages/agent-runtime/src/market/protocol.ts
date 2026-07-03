@@ -10,7 +10,12 @@
  *   AWARD  round=<n> to=<seller>                                 buyer  -> market, @winner
  *   ESCROW_REQUIRED round=<n> reference=<R> seller=<addr> amount=<sol> deadline=<secs>  seller -> buyer
  *   DEPOSITED round=<n> reference=<R> buyer=<addr> sig=<sig>     buyer  -> seller
- *   (then DELIVERED / RELEASED / REFUNDED reuse the round tag)
+ *   DELIVERED round=<n> <json>                                  seller -> buyer
+ *   VERIFIED round=<n> ok=1 code=<code> reason="<why>"           buyer  -> market
+ *   VERIFICATION_FAILED round=<n> ok=0 code=<code> reason="<why>" buyer -> market
+ *   ARBITER_REVIEW round=<n> service=<name> arg="<arg>" reference=<R> seller=<addr> payer=<addr> delivery=<json>
+ *   ARBITER_VERIFIED / ARBITER_REJECTED round=<n> ok=<1|0> code=<code> reason="<why>"
+ *   (then RELEASED / REFUNDED reuse the round tag)
  */
 
 export interface Want {
@@ -50,12 +55,44 @@ export interface Deposited {
   arbiter?: string
 }
 
+export interface Delivered {
+  round: number
+  raw: string
+}
+
+export interface Verification {
+  round: number
+  ok: boolean
+  code: string
+  reason: string
+}
+
+export interface ArbiterReview {
+  round: number
+  service: string
+  arg: string
+  reference: string
+  seller: string
+  payer: string
+  raw: string
+}
+
+export interface ArbiterDecision {
+  round: number
+  ok: boolean
+  code: string
+  reason: string
+}
+
 const num = (text: string, key: string): number | undefined => {
   const m = text.match(new RegExp(`${key}=([\\d.]+)`))
   return m ? Number(m[1]) : undefined
 }
 const tok = (text: string, key: string): string | undefined =>
   text.match(new RegExp(`${key}=(\\S+)`))?.[1]
+const quoted = (text: string, key: string): string | undefined =>
+  text.match(new RegExp(`${key}="([^"]*)"`))?.[1]
+const cleanQuote = (value: string): string => value.replace(/"/g, "'")
 
 /** The leading verb of a market message (`WANT`, `BID`, ...), or '' if none. */
 export function verb(text: string): string {
@@ -156,6 +193,66 @@ export function parseDeposited(text: string): Deposited | null {
     ...(vault ? { vault } : {}),
     ...(arbiter ? { arbiter } : {}),
   }
+}
+
+// -- DELIVERED -------------------------------------------------------------------
+export function formatDelivered(d: Delivered): string {
+  return `DELIVERED round=${d.round} ${d.raw}`
+}
+export function parseDelivered(text: string): Delivered | null {
+  if (verb(text) !== 'DELIVERED') return null
+  const round = num(text, 'round')
+  if (round == null) return null
+  const raw = text.replace(/^DELIVERED\s+round=[\d.]+\s*/i, '').trim()
+  return { round, raw }
+}
+
+// -- VERIFIED / VERIFICATION_FAILED ----------------------------------------------
+export function formatVerified(v: Verification): string {
+  const verb = v.ok ? 'VERIFIED' : 'VERIFICATION_FAILED'
+  return `${verb} round=${v.round} ok=${v.ok ? 1 : 0} code=${v.code} reason="${cleanQuote(v.reason)}"`
+}
+export function parseVerified(text: string): Verification | null {
+  const v = verb(text)
+  if (v !== 'VERIFIED' && v !== 'VERIFICATION_FAILED') return null
+  const round = num(text, 'round')
+  const okTok = tok(text, 'ok')
+  const code = tok(text, 'code')
+  const reason = quoted(text, 'reason') ?? ''
+  if (round == null || !code) return null
+  return { round, ok: okTok === '1' || v === 'VERIFIED', code, reason }
+}
+
+// -- ARBITER_REVIEW / ARBITER_VERIFIED / ARBITER_REJECTED -----------------------
+export function formatArbiterReview(r: ArbiterReview): string {
+  return `ARBITER_REVIEW round=${r.round} service=${r.service} arg="${cleanQuote(r.arg)}" reference=${r.reference} seller=${r.seller} payer=${r.payer} delivery=${r.raw}`
+}
+export function parseArbiterReview(text: string): ArbiterReview | null {
+  if (verb(text) !== 'ARBITER_REVIEW') return null
+  const round = num(text, 'round')
+  const service = tok(text, 'service')
+  const arg = quoted(text, 'arg')
+  const reference = tok(text, 'reference')
+  const seller = tok(text, 'seller')
+  const payer = tok(text, 'payer')
+  const raw = text.match(/\sdelivery=(.+)$/)?.[1]?.trim()
+  if (round == null || !service || arg == null || !reference || !seller || !payer || raw == null) return null
+  return { round, service, arg, reference, seller, payer, raw }
+}
+
+export function formatArbiterDecision(d: ArbiterDecision): string {
+  const verb = d.ok ? 'ARBITER_VERIFIED' : 'ARBITER_REJECTED'
+  return `${verb} round=${d.round} ok=${d.ok ? 1 : 0} code=${d.code} reason="${cleanQuote(d.reason)}"`
+}
+export function parseArbiterDecision(text: string): ArbiterDecision | null {
+  const v = verb(text)
+  if (v !== 'ARBITER_VERIFIED' && v !== 'ARBITER_REJECTED') return null
+  const round = num(text, 'round')
+  const okTok = tok(text, 'ok')
+  const code = tok(text, 'code')
+  const reason = quoted(text, 'reason') ?? ''
+  if (round == null || !code) return null
+  return { round, ok: okTok === '1' || v === 'ARBITER_VERIFIED', code, reason }
 }
 
 // -- selection -------------------------------------------------------------------

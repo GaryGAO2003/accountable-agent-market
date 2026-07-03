@@ -27,6 +27,7 @@ SETTLEMENT_MODE = { type = "string", default = "arbiter", description = "arbiter
 ESCROW_DEADLINE_SECS = { type = "f64", default = 600, description = "Refund deadline for escrow deposits (seconds)" }
 TXLINE_API_KEY = { type = "string", default = "", description = "Activated TxLINE API token" }
 TXLINE_BASE_URL = { type = "string", default = "", description = "Override the TxLINE host" }
+TXLINE_DELIVERY_MODE = { type = "string", default = "normal", description = "normal | bad_count | invalid_json; use bad_count for the scripted VERIFICATION_FAILED demo" }
 ANTHROPIC_API_KEY = { type = "string", default = "", description = "Anthropic key for live reads" }
 OPENAI_API_KEY = { type = "string", default = "", description = "OpenAI key; set LLM_PROVIDER=openai to use it" }
 VENICE_API_KEY = { type = "string", default = "", description = "Venice AI key (OpenAI-compatible, free credits); set LLM_PROVIDER=venice to use it" }

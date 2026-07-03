@@ -1,0 +1,24 @@
+edition = 4
+
+[agent]
+name = "arbiter-agent"
+version = "0.1.0"
+description = "Neutral verifier for the marketplace. Re-executes objective TxLINE evidence from the CoralOS thread and gates arbiter release/refund."
+summary = "A third-party arbiter agent that decides ARBITER_VERIFIED / ARBITER_REJECTED and signs settlement."
+readme = "Listens for ARBITER_REVIEW messages, runs objective TxLINE re-exec, emits an arbiter decision, and calls arbitrate_release or optional arbitrate_refund."
+
+[agent.license]
+type = "spdx"
+expression = "MIT"
+
+[options]
+ARBITER_KEYPAIR_B58 = { type = "string", description = "Base58-encoded devnet arbiter keypair; signs arbiter release/refund" }
+AGENT_NAME = { type = "string", default = "arbiter-agent", description = "Market identity for the neutral arbiter" }
+SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL (devnet)" }
+TXLINE_API_KEY = { type = "string", default = "", description = "Activated TxLINE API token for objective re-exec" }
+TXLINE_BASE_URL = { type = "string", default = "", description = "Override the TxLINE host" }
+ARBITER_REFUND_ON_REJECT = { type = "string", default = "", description = "Set to 1 to attempt arbitrate_refund after ARBITER_REJECTED; escrow deadline still applies" }
+TRACE = { type = "string", default = "", description = "Set to 1 to log review details + Explorer links" }
+
+[runtimes.docker]
+image = "arbiter-agent:0.1.0"
