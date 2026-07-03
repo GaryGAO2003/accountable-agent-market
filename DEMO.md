@@ -87,7 +87,8 @@ slashing, reputation (PLAN.md phases 3–9). The demo now shows both halves: **t
    accumulating real revenue.
 6. **Fraud, not just no-shows** (15s, optional if time). `DEMO_FAIL_VERIFICATION=1` launches a
    seller that reports a wrong TxLINE fixture count: the buyer's re-exec catches it
-   (`VERIFICATION_FAILED`) and no release happens — bad data is treated like no delivery.
+   (`VERIFICATION_FAILED`), no release happens, and the deposit comes back after the deadline —
+   bad data is treated exactly like no delivery.
 7. **The pitch** (20s). "In two days of running this market we found six ways agent settlement
    breaks — a squatted arbiter, unpayable wallets, colliding escrows, a refund path nobody wired.
    Accountability can't be a promise; it has to be the protocol. Shipped: verify-then-pay +

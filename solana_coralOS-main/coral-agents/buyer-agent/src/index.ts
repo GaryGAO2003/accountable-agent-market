@@ -156,6 +156,28 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
         depositSig = await deposit(program, buyer, seller, reference, terms.amountSol, terms.deadlineSecs)
       }
       const depositedAtMs = Date.now() // anchors the on-chain refund deadline for the no-delivery path
+      // Reclaim the deposit once the on-chain deadline passes - shared by the no-delivery and
+      // failed-verification outcomes. Direct escrow only: the arbiter path owns its own refunds.
+      const canRefundInRound = requestedSettlement === 'direct' && terms.deadlineSecs <= REFUND_WAIT_CAP_SECS
+      const refundAfterDeadline = async (): Promise<void> => {
+        // Wait out the deadline (+5s for cluster clock skew), then reclaim with refund() and broadcast it.
+        const waitMs = depositedAtMs + terms.deadlineSecs * 1000 + 5_000 - Date.now()
+        if (waitMs > 0) await sleep(waitMs)
+        let refundSig: string | null = null
+        for (let attempt = 1; attempt <= 4 && !refundSig; attempt++) {
+          try {
+            refundSig = await refund(program, buyer, reference)
+          } catch (e) {
+            // The escrow throws BeforeDeadline if the cluster clock lags local - retrying is the fix.
+            if (attempt === 4) console.error(`[buyer] round ${round}: refund failed after 4 attempts - ${e}`)
+            else await sleep(5_000)
+          }
+        }
+        if (refundSig) {
+          console.error(`[buyer] round ${round}: REFUNDED from ${winner.by} - ${expl('tx', refundSig)}`)
+          await ctx.send(`REFUNDED round=${round} sig=${refundSig} settlement=direct`, thread, [winner.by])
+        }
+      }
       console.error(`[buyer] round ${round}: DEPOSITED ${terms.amountSol} SOL -> ${winner.by}`)
       if (trace) {
         if (requestedSettlement === 'arbiter' && vault) {
@@ -211,7 +233,11 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
         await ctx.send(formatVerified({ round, ...verification }), thread, [winner.by])
         if (!verification.ok) {
           console.error(`[buyer] round ${round}: verification failed (${verification.code}) - ${verification.reason}`)
-          console.error(`[buyer] round ${round}: funds stay in escrow, refundable after the deadline`)
+          if (canRefundInRound) {
+            await refundAfterDeadline() // bad data is treated like no delivery: the money comes back
+          } else {
+            console.error(`[buyer] round ${round}: funds stay in escrow, refundable after the deadline`)
+          }
           await sleep(CYCLE_MS)
           continue
         }
@@ -221,25 +247,9 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
         const releaseVerb = requestedSettlement === 'arbiter' ? 'ARBITER_RELEASED' : 'RELEASED'
         console.error(`[buyer] round ${round}: ${releaseVerb} to ${winner.by} - ${expl('tx', releaseSig)}`)
         await ctx.send(`${releaseVerb} round=${round} sig=${releaseSig} settlement=${requestedSettlement}`, thread, [winner.by])
-      } else if (requestedSettlement === 'direct' && terms.deadlineSecs <= REFUND_WAIT_CAP_SECS) {
-        // Accountability path: the winner took the escrow and never delivered. Wait out the on-chain
-        // deadline (+5s for cluster clock skew), then reclaim the funds with refund() and broadcast it.
-        const waitMs = depositedAtMs + terms.deadlineSecs * 1000 + 5_000 - Date.now()
-        if (waitMs > 0) await sleep(waitMs)
-        let refundSig: string | null = null
-        for (let attempt = 1; attempt <= 4 && !refundSig; attempt++) {
-          try {
-            refundSig = await refund(program, buyer, reference)
-          } catch (e) {
-            // The escrow throws BeforeDeadline if the cluster clock lags local - retrying is the fix.
-            if (attempt === 4) console.error(`[buyer] round ${round}: refund failed after 4 attempts - ${e}`)
-            else await sleep(5_000)
-          }
-        }
-        if (refundSig) {
-          console.error(`[buyer] round ${round}: REFUNDED from ${winner.by} - ${expl('tx', refundSig)}`)
-          await ctx.send(`REFUNDED round=${round} sig=${refundSig} settlement=direct`, thread, [winner.by])
-        }
+      } else if (canRefundInRound) {
+        // Accountability path: the winner took the escrow and never delivered.
+        await refundAfterDeadline()
       } else {
         console.error(`[buyer] round ${round}: no delivery - funds stay in escrow, refundable after the deadline`)
       }
