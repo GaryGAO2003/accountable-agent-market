@@ -157,6 +157,9 @@ async function main() {
     BUYER_SERVICE: str(buyerService),
     BUYER_ARG: str(buyerArg),
     ...(buyerArgs ? { BUYER_ARGS: str(buyerArgs) } : {}),
+    // The buyer re-executes the objective TxLINE read to verify deliveries - it needs the token too.
+    TXLINE_API_KEY: str(txlineKey),
+    ...(env.TXLINE_BASE_URL ? { TXLINE_BASE_URL: str(env.TXLINE_BASE_URL) } : {}),
     MARKET_SELLERS: str(buyerSellers.join(',')),
     ...(arbiterAgentEnabled ? { ARBITER_AGENT_ENABLED: str('1'), ARBITER_AGENT_NAME: str(arbiterAgentName) } : {}),
     ...llmOpts,

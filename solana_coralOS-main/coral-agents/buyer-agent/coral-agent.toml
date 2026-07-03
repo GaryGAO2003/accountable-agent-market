@@ -31,6 +31,8 @@ BID_WINDOW_MS = { type = "f64", default = 5000, description = "How long to colle
 CYCLE_INTERVAL_MS = { type = "f64", default = 30000, description = "Delay between market rounds" }
 SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL (devnet)" }
 SETTLEMENT_MODE = { type = "string", default = "arbiter", description = "arbiter (default) | direct legacy base escrow" }
+TXLINE_API_KEY = { type = "string", default = "", description = "Activated TxLINE API token - the buyer re-executes the objective read to verify deliveries" }
+TXLINE_BASE_URL = { type = "string", default = "", description = "Override the TxLINE host (defaults to txline-dev.txodds.com)" }
 ANTHROPIC_API_KEY = { type = "string", default = "", description = "Anthropic key (default brain for best-value selection)" }
 OPENAI_API_KEY = { type = "string", default = "", description = "OpenAI key - set with LLM_PROVIDER=openai to flip the brain" }
 VENICE_API_KEY = { type = "string", default = "", description = "Venice AI key (OpenAI-compatible, free credits) - set with LLM_PROVIDER=venice to flip the brain" }
