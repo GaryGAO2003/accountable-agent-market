@@ -44,7 +44,9 @@ export function RoundCard({ round }: { round: Round }) {
       <footer className="settle-row">
         {round.deposit && <SettlementBadge label={`deposit ${round.escrow?.amountSol ?? ''} SOL`} sig={round.deposit.sig} />}
         {round.release && <SettlementBadge label="release" sig={round.release.sig} />}
-        {round.refunded && <span className="settle settle-refund" data-testid="refund">refunded</span>}
+        {round.refund?.sig
+          ? <SettlementBadge label="refund" sig={round.refund.sig} className="settle-refund" />
+          : round.refunded && <span className="settle settle-refund" data-testid="refund">refunded</span>}
       </footer>
     </article>
   )

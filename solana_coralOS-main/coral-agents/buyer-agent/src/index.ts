@@ -22,7 +22,7 @@ import {
   type Bid, type EscrowTerms, type CoralAgentContext,
 } from '@pay/agent-runtime'
 import { PublicKey } from '@solana/web3.js'
-import { makeProgram, deposit, release, escrowPda } from './escrow.js'
+import { makeProgram, deposit, release, refund, escrowPda } from './escrow.js'
 import {
   ARBITER_PROGRAM_ID, ensureArbiterConfig, ensureArbiterFunded, makeArbiter,
   openArbitrated, arbitrateRelease, arbitratedEscrowPda,
@@ -38,6 +38,8 @@ const ARGS = (process.env.BUYER_ARGS || process.env.BUYER_ARG || 'SOL-USDC').spl
 const ARG = ARGS[0]
 const BID_WINDOW_MS = Number(process.env.BID_WINDOW_MS ?? '5000')
 const CYCLE_MS = Number(process.env.CYCLE_INTERVAL_MS ?? '30000')
+// Longest deadline the buyer will wait out in-round to reclaim funds from a no-show (direct escrow only).
+const REFUND_WAIT_CAP_SECS = 120
 const SELLERS = (process.env.MARKET_SELLERS ?? 'seller-worldcup,seller-fast,seller-premium')
   .split(',').map((s) => s.trim()).filter(Boolean)
 // F3: the payout wallet the buyer expects (personas share one in the demo). If set, the buyer refuses
@@ -148,6 +150,7 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
       } else {
         depositSig = await deposit(program, buyer, seller, reference, terms.amountSol, terms.deadlineSecs)
       }
+      const depositedAtMs = Date.now() // anchors the on-chain refund deadline for the no-delivery path
       console.error(`[buyer] round ${round}: DEPOSITED ${terms.amountSol} SOL -> ${winner.by}`)
       if (trace) {
         if (requestedSettlement === 'arbiter' && vault) {
@@ -184,6 +187,25 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
         const releaseVerb = requestedSettlement === 'arbiter' ? 'ARBITER_RELEASED' : 'RELEASED'
         console.error(`[buyer] round ${round}: ${releaseVerb} to ${winner.by} - ${expl('tx', releaseSig)}`)
         await ctx.send(`${releaseVerb} round=${round} sig=${releaseSig} settlement=${requestedSettlement}`, thread, [winner.by])
+      } else if (requestedSettlement === 'direct' && terms.deadlineSecs <= REFUND_WAIT_CAP_SECS) {
+        // Accountability path: the winner took the escrow and never delivered. Wait out the on-chain
+        // deadline (+5s for cluster clock skew), then reclaim the funds with refund() and broadcast it.
+        const waitMs = depositedAtMs + terms.deadlineSecs * 1000 + 5_000 - Date.now()
+        if (waitMs > 0) await sleep(waitMs)
+        let refundSig: string | null = null
+        for (let attempt = 1; attempt <= 4 && !refundSig; attempt++) {
+          try {
+            refundSig = await refund(program, buyer, reference)
+          } catch (e) {
+            // The escrow throws BeforeDeadline if the cluster clock lags local - retrying is the fix.
+            if (attempt === 4) console.error(`[buyer] round ${round}: refund failed after 4 attempts - ${e}`)
+            else await sleep(5_000)
+          }
+        }
+        if (refundSig) {
+          console.error(`[buyer] round ${round}: REFUNDED from ${winner.by} - ${expl('tx', refundSig)}`)
+          await ctx.send(`REFUNDED round=${round} sig=${refundSig} settlement=direct`, thread, [winner.by])
+        }
       } else {
         console.error(`[buyer] round ${round}: no delivery - funds stay in escrow, refundable after the deadline`)
       }

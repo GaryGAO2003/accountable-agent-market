@@ -20,6 +20,7 @@ export interface Round {
   delivered?: { raw: string; data?: unknown }
   release?: { sig: string }
   refunded?: boolean
+  refund?: { sig: string }
   status: RoundStatus
 }
 

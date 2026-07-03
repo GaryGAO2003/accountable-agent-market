@@ -26,4 +26,21 @@ export const biddingRound: Round = {
   status: 'bidding',
 }
 
-export const fixtureRounds: Round[] = [settledRound, biddingRound]
+/** A refunded round — the winning seller never delivered, so the buyer reclaimed escrow on-chain. */
+export const refundedRound: Round = {
+  round: 3,
+  want: { service: 'coingecko', arg: 'SOL-USDC', budgetSol: 0.001 },
+  bids: [
+    { by: 'seller-premium', priceSol: 0.0005, note: 'verified' },
+    { by: 'seller-cheap', priceSol: 0.0002, note: 'undercut' },
+  ],
+  declined: ['seller-honest'],
+  award: { to: 'seller-cheap', reason: 'cheapest bid for a simple lookup' },
+  escrow: { reference: 'DKQy', seller: '7jwB', amountSol: 0.0002, deadlineSecs: 600 },
+  deposit: { sig: '8kLmNpQr2sTuVwXy3zAb', buyer: '47Dp' },
+  refunded: true,
+  refund: { sig: '7RfNdK3mPq2sT8vXaZ9cBnW4hJ5uY6eD' },
+  status: 'refunded',
+}
+
+export const fixtureRounds: Round[] = [settledRound, biddingRound, refundedRound]

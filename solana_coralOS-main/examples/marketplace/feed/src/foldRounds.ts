@@ -33,6 +33,7 @@ export interface Round {
   delivered?: { raw: string; data?: unknown }
   release?: { sig: string }
   refunded?: boolean
+  refund?: { sig: string }
   status: RoundStatus
 }
 
@@ -94,6 +95,8 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
       round.status = 'settled'
     } else if (v === 'REFUNDED' && r != null) {
       const round = get(r)
+      const sig = text.match(/sig=(\S+)/)?.[1]
+      if (sig) round.refund = { sig }
       round.refunded = true
       round.status = 'refunded'
     }

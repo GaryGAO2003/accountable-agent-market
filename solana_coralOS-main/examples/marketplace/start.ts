@@ -103,7 +103,8 @@ async function main() {
       ...llmOpts,
     })
 
-  const sellers = ['seller-cheap', 'seller-honest', 'seller-premium']
+  // seller-rogue is the accountability persona: wins low, never delivers, so the buyer refunds after the deadline.
+  const sellers = ['seller-cheap', 'seller-honest', 'seller-premium', 'seller-rogue']
 
   // Optional broker swarm (ENABLE_BROKER=1, see coral-agents/broker/README.md): the buyer buys from a
   // broker, which resells from the real sellers. Needs a funded broker wallet + seller receive wallets —
@@ -157,9 +158,7 @@ async function main() {
       agentGraphRequest: {
         agents: [
           agent('buyer-agent', buyerOpts),
-          seller('seller-cheap'),
-          seller('seller-honest'),
-          seller('seller-premium'),
+          ...sellers.map((s) => seller(s)),
           ...brokerAgents,
         ],
       },

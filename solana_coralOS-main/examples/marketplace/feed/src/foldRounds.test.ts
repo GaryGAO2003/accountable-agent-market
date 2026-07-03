@@ -54,14 +54,28 @@ describe('foldRounds', () => {
     expect(foldRounds(msgs).find((r) => r.round === 2)?.bids).toHaveLength(1)
   })
 
-  it('handles a refund-after-deadline round', () => {
+  it('handles a refund-after-deadline round (older transcript with no sig)', () => {
     const msgs: RawMessage[] = [
       { sender: 'buyer-agent', text: 'WANT round=3 service=coingecko arg=x budget=0.001' },
       { sender: 'seller-cheap', text: 'BID round=3 price=0.0002 by=seller-cheap' },
       { sender: 'buyer-agent', text: 'AWARD round=3 to=seller-cheap' },
       { sender: 'buyer-agent', text: 'REFUNDED round=3' },
     ]
-    expect(foldRounds(msgs).find((r) => r.round === 3)?.status).toBe('refunded')
+    const r = foldRounds(msgs).find((r) => r.round === 3)
+    expect(r?.status).toBe('refunded')
+    expect(r?.refund).toBeUndefined()
+  })
+
+  it('captures the refund tx sig when the buyer reclaims escrow on-chain', () => {
+    const msgs: RawMessage[] = [
+      { sender: 'buyer-agent', text: 'WANT round=1 service=coingecko arg=x budget=0.001' },
+      { sender: 'seller-cheap', text: 'BID round=1 price=0.0002 by=seller-cheap' },
+      { sender: 'buyer-agent', text: 'AWARD round=1 to=seller-cheap' },
+      { sender: 'buyer-agent', text: 'REFUNDED round=1 sig=FAKESIG123 settlement=direct' },
+    ]
+    const r = foldRounds(msgs).find((r) => r.round === 1)
+    expect(r?.status).toBe('refunded')
+    expect(r?.refund?.sig).toBe('FAKESIG123')
   })
 
   it('separates interleaved rounds and sorts ascending', () => {

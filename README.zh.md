@@ -8,28 +8,36 @@
 
 ## 它做什么（2026-07-03 已在 devnet 真实跑通）
 
-一个**买家 agent** 在 CoralOS 共享消息线程里广播需求；三个 **LLM 卖家 persona**——低价走量的
-`seller-cheap`、公道可靠的 `seller-honest`、高价高信心的 `seller-premium`——各自用 LLM 决定
-"接不接、报多少"（不低于各自成本底价）。买家给出理由授标，把货款锁进 **Solana 托管合约**，
-中标者交付**真实的 TxODDS 世界杯数据**，托管在交付后自动放款。每一步都是 devnet 上可查证的真实
-交易；React 面板把消息流实时折叠成拍卖时间线。
+一个**买家 agent** 在 CoralOS 共享消息线程里广播需求；四个 **LLM 卖家 persona**——低价走量的
+`seller-cheap`、公道可靠的 `seller-honest`、高价高信心的 `seller-premium`，以及**反派**
+`seller-rogue`（中标、收下托管、然后玩消失）——各自用 LLM 决定"接不接、报多少"（不低于各自
+成本底价）。买家给出理由授标，把货款锁进 **Solana 托管合约**，中标者交付**真实的 TxODDS
+世界杯数据**，托管在交付后自动放款。若中标的是 rogue、到期没有交付，买家等过链上 deadline 后
+**用托管合约的 refund 指令单方面收回资金**——该轮在面板上变红（refunded），带自己的 Explorer
+链接。每一步都是 devnet 上可查证的真实交易；React 面板把消息流实时折叠成拍卖时间线。
 
 ```
-WANT → 三个 LLM 出价（persona 定价）→ 授标+理由 → 托管入金 → 交付真实数据 → 链上放款
+WANT → 四个 LLM 出价（persona 定价）→ 授标+理由 → 托管入金 ─┬→ 交付真实数据 → 链上放款
+                                                            └→ 无交付 → 过期 → 链上退款
 ```
 
-链上凭证（Solana Explorer，devnet）：
+链上凭证（Solana Explorer，devnet——同一场 live session，两种结局）：
 
-- 第 1 轮——**seller-honest** 以 0.0005 胜出（LLM 买家权衡注释而非只看价格）：
-  [放款交易](https://explorer.solana.com/tx/2nhjgoR8W3gJjm8Uxas1WtQbf722xsTdYcRBwxo5zh6gRYNqq1RoTZp2fA6CqwsvLy3LCXJVnu31ekh6n1T1mHrC?cluster=devnet)
-- 第 2 轮——**seller-cheap** 胜出：
-  [放款交易](https://explorer.solana.com/tx/261BtQLUQv6WtPkQ9iokAXdycMLgXVVjv2VH1eE6yGXwd4Eojiy3cDqATpA4ri4WAFxYLHeApVviJz7BnGyvhEFr?cluster=devnet)
-- 第 3 轮——**seller-honest** 胜出：
-  [放款交易](https://explorer.solana.com/tx/2P5brUpoVGicuWuzwbpF8MgEUiZcjYSAQwBGEaE3ZXxAmXBiKTZH7NaBpxBktKVuW3dWiWkUPPAv14uUxZ7bx7hd?cluster=devnet)
+- 第 1 轮 **settled**——**seller-honest** 以 0.0007 胜过 rogue 的 0.00025（LLM 买家权衡注释而非
+  只看价格）：
+  [放款交易](https://explorer.solana.com/tx/2vp5d5RCe3yMCRSiFCkD57JF4cPrVfx6BKhTFajmq7dxMkS6iMLTngCMs6vJnqeH7rTX2ykvgzetdGhdSiYtKUr7?cluster=devnet)
+- 第 2 轮 **refunded**——**seller-rogue** 伪装成正经供应商中标；托管入金后拒不交付，买家在 45 秒
+  deadline 过后收回资金：
+  [退款交易](https://explorer.solana.com/tx/5PLwHDBizrxadzF6ScVaCQG81xeFogbYgsp8aReZ2tyvVYQZW8LjTayZMuHtpaRQSq5tx9HECRrnmUTCokyAn7g5?cluster=devnet)
+- 第 3 轮 **refunded**——rogue 又中标、又一分钱没赚到：
+  [退款交易](https://explorer.solana.com/tx/4qiHDaqVLgcmJh7cmNCHvWbXF4Ek6gVd5fNAvxHsrkQ2rWBN7f57iwJNmSJBV3cRuK39VJRpPQHA4t93RsSo8bcw?cluster=devnet)
+- 更早的纯成交 session：[honest 凭价值胜过
+  cheap](https://explorer.solana.com/tx/2nhjgoR8W3gJjm8Uxas1WtQbf722xsTdYcRBwxo5zh6gRYNqq1RoTZp2fA6CqwsvLy3LCXJVnu31ekh6n1T1mHrC?cluster=devnet)
+  · [cheap 凭价格胜出](https://explorer.solana.com/tx/261BtQLUQv6WtPkQ9iokAXdycMLgXVVjv2VH1eE6yGXwd4Eojiy3cDqATpA4ri4WAFxYLHeApVviJz7BnGyvhEFr?cluster=devnet)
 
 ## 为什么叫"可问责"
 
-真实运行这套市场的**一天之内，结算以五种方式坏掉**——每一个都在本仓库的提交历史里被诊断并修复
+真实运行这套市场的**两天之内，结算以六种方式坏掉**——每一个都在本仓库的提交历史里被诊断并修复
 （细节见 [DEMO.md](DEMO.md)）：
 
 1. 启动器引用了不存在的卖家 persona——session 创建必然失败。
@@ -38,6 +46,10 @@ WANT → 三个 LLM 出价（persona 定价）→ 授标+理由 → 托管入金
    陌生人的钥匙后面。
 4. 全新卖家钱包收不了低于 Solana 免租门槛的小额货款——每一轮都卡死。
 5. 托管支付 reference 不含 session 成分——重跑与旧托管账户碰撞。
+6. **退款路径在链上一直存在，却从来没人接线**——卖家跑路只会让买家的钱永远困在托管里。我们把它
+   接上，并造出 `seller-rogue` 现场验证。过程中的意外发现：rogue 的推销词浮夸时（"Rock bottom
+   price, instant!"），DeepSeek 买家**连续 9 轮拒绝它**；换上冷静的"机构供应商"人设立刻中标——
+   LLM 的谨慎是软防线，链上 deadline 退款才是兜底的硬防线。
 
 这就是论点：**agent 市场会以人类不会盯着看的方式坏掉。** 结算轨道必须自带验证、自有仲裁、
 slashing 与信誉——见[路线图](PLAN.md)（verify-then-pay 流水线，出处见[提案](PROPOSAL.zh.md)）。
@@ -71,11 +83,14 @@ cd examples/marketplace && npm install && npm start     # 打印 session id
 以原始状态 vendor 在 [`solana_coralOS-main/`](solana_coralOS-main/)——之后每个改动都是独立可审的提交：
 
 - 三个卖家 persona manifest + 启动名单修复（原版 marketplace 起不来）。
+- **问责闭环**：买家侧 deadline 退款（`refund()` 早已部署在链上却从未被调用）、`REFUNDED`
+  协议消息、带 `DELIVER_MODE` 开关（`none`/`junk`）的 `seller-rogue` persona、面板上带
+  Explorer 链接的红色退款徽章。
 - 面板 feed 把 `ARBITER_RELEASED` 折叠为 settled（默认结算模式下回合永远不显示结清）。
 - 向买家转发 `ARBITER_KEYPAIR_B58`；结算模式可配置（`SETTLEMENT_MODE`）。
 - **DeepSeek** 成为第四个 LLM provider，并为推理型模型设 token 下限。
 - 卖家免租门槛启动预检；托管 reference 绑定加每次运行唯一的盐。
-- 全程测试绿灯：agent-runtime 37/37 · feed 9/9 · web 5/5（各处 typecheck 通过）。
+- 全程测试绿灯：agent-runtime 37/37 · feed 10/10 · web 7/7（各处 typecheck 通过）。
 
 ## 路线图（版本对应见 [PLAN.md](PLAN.md)）
 
@@ -87,7 +102,7 @@ cd examples/marketplace && npm install && npm start     # 打印 session id
 | 路径 | 内容 |
 |---|---|
 | `solana_coralOS-main/` | vendor 的 kit + 我们的改动（agents、runtime、托管合约、marketplace、面板） |
-| `DEMO.md` | Demo 分镜、运行手册、链上凭证、五个发现的细节 |
+| `DEMO.md` | Demo 分镜、运行手册、链上凭证、六个发现的细节 |
 | `PLAN.md` | 按版本推进的路线图 |
 | `PROPOSAL.md` / `PROPOSAL.zh.md` | 提案 |
 | `CRITIQUE.md` | 对提案的对抗性评审（决策记录） |
