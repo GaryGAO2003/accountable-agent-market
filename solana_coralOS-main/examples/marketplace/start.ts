@@ -84,7 +84,7 @@ async function main() {
       ...llmOpts,
     })
 
-  const sellers = ['seller-worldcup', 'seller-cheap', 'seller-premium']
+  const sellers = ['seller-cheap', 'seller-honest', 'seller-premium']
 
   // Optional broker swarm (ENABLE_BROKER=1, see coral-agents/broker/README.md): the buyer buys from a
   // broker, which resells from the real sellers. Needs a funded broker wallet + seller receive wallets —
@@ -136,8 +136,8 @@ async function main() {
       agentGraphRequest: {
         agents: [
           agent('buyer-agent', buyerOpts),
-          seller('seller-worldcup'),
           seller('seller-cheap'),
+          seller('seller-honest'),
           seller('seller-premium'),
           ...brokerAgents,
         ],
