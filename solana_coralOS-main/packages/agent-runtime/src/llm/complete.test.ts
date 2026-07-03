@@ -32,10 +32,25 @@ describe('pickProvider', () => {
     expect(pickProvider()).toBe('venice')
   })
 
+  it('explicit LLM_PROVIDER=deepseek wins', () => {
+    process.env.LLM_PROVIDER = 'deepseek'
+    process.env.ANTHROPIC_API_KEY = 'x'
+    expect(pickProvider()).toBe('deepseek')
+  })
+
+  it('auto-detects DeepSeek when only its key is present', () => {
+    delete process.env.LLM_PROVIDER
+    delete process.env.OPENAI_API_KEY
+    delete process.env.VENICE_API_KEY
+    process.env.DEEPSEEK_API_KEY = 'x'
+    expect(pickProvider()).toBe('deepseek')
+  })
+
   it('defaults to anthropic', () => {
     delete process.env.LLM_PROVIDER
     delete process.env.OPENAI_API_KEY
     delete process.env.VENICE_API_KEY
+    delete process.env.DEEPSEEK_API_KEY
     expect(pickProvider()).toBe('anthropic')
   })
 })

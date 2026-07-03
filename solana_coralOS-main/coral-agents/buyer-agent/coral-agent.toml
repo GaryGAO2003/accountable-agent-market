@@ -32,7 +32,8 @@ SETTLEMENT_MODE = { type = "string", default = "arbiter", description = "arbiter
 ANTHROPIC_API_KEY = { type = "string", default = "", description = "Anthropic key (default brain for best-value selection)" }
 OPENAI_API_KEY = { type = "string", default = "", description = "OpenAI key - set with LLM_PROVIDER=openai to flip the brain" }
 VENICE_API_KEY = { type = "string", default = "", description = "Venice AI key (OpenAI-compatible, free credits) - set with LLM_PROVIDER=venice to flip the brain" }
-LLM_PROVIDER = { type = "string", default = "", description = "anthropic (default) | openai | venice" }
+DEEPSEEK_API_KEY = { type = "string", default = "", description = "DeepSeek key (OpenAI-compatible) - set with LLM_PROVIDER=deepseek to flip the brain" }
+LLM_PROVIDER = { type = "string", default = "", description = "anthropic (default) | openai | venice | deepseek" }
 LLM_MODEL = { type = "string", default = "", description = "Override the LLM model id" }
 TRACE = { type = "string", default = "", description = "Set to 1 to log CoralOS calls + on-chain steps (Explorer links)" }
 

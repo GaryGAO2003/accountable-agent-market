@@ -3,21 +3,23 @@
  *
  * SDK-free (`fetch`-based) so the runtime stays dependency-light. Provider is chosen by env, so the
  * whole market flips from Anthropic (dev default) to the sponsored OpenAI key with `LLM_PROVIDER=openai`
- * (or to Venice AI with `LLM_PROVIDER=venice`) and no code change. Callers ask for a single JSON-shaped
+ * (or to Venice AI with `LLM_PROVIDER=venice`, or DeepSeek with `LLM_PROVIDER=deepseek`) and no code
+ * change. Callers ask for a single JSON-shaped
  * answer and enforce their own guards on it — the model proposes, code disposes.
  *
  * To add a provider in code: extend `LlmProvider`, add a `DEFAULT_MODEL` entry, teach `pickProvider()`
  * to detect it, and dispatch to a `complete*()` in `complete()`. Venice is OpenAI-compatible, so it just
- * reuses `completeOpenAICompatible()` with a different base URL + key.
+ * reuses `completeOpenAICompatible()` with a different base URL + key; DeepSeek follows the same pattern.
  */
-export type LlmProvider = 'anthropic' | 'openai' | 'venice'
+export type LlmProvider = 'anthropic' | 'openai' | 'venice' | 'deepseek'
 
 /** Explicit `LLM_PROVIDER` wins; else auto-detect by which key is present; else Anthropic. */
 export function pickProvider(): LlmProvider {
   const p = process.env.LLM_PROVIDER?.toLowerCase()
-  if (p === 'openai' || p === 'anthropic' || p === 'venice') return p
+  if (p === 'openai' || p === 'anthropic' || p === 'venice' || p === 'deepseek') return p
   if (process.env.OPENAI_API_KEY) return 'openai'
   if (process.env.VENICE_API_KEY) return 'venice'
+  if (process.env.DEEPSEEK_API_KEY) return 'deepseek'
   return 'anthropic'
 }
 
@@ -25,6 +27,7 @@ const DEFAULT_MODEL: Record<LlmProvider, string> = {
   anthropic: 'claude-haiku-4-5-20251001',
   openai: 'gpt-4o-mini',
   venice: 'llama-3.3-70b',
+  deepseek: 'deepseek-v4-flash',
 }
 
 export interface CompleteOpts {
@@ -50,6 +53,8 @@ export async function complete(opts: CompleteOpts): Promise<string> {
     ? await completeOpenAI(opts, model, maxTokens)
     : provider === 'venice'
     ? await completeVenice(opts, model, maxTokens)
+    : provider === 'deepseek'
+    ? await completeDeepSeek(opts, model, maxTokens)
     : await completeAnthropic(opts, model, maxTokens)
 
   if (trace) console.error(`[llm] ← ${text.slice(0, 300)}`)
@@ -98,7 +103,20 @@ async function completeVenice(opts: CompleteOpts, model: string, maxTokens: numb
   })
 }
 
-/** The OpenAI chat-completions request shape, shared by any OpenAI-compatible provider (OpenAI, Venice). */
+/** DeepSeek — OpenAI-compatible, same request shape against DeepSeek's base URL. */
+async function completeDeepSeek(opts: CompleteOpts, model: string, maxTokens: number): Promise<string> {
+  const key = process.env.DEEPSEEK_API_KEY
+  if (!key) throw new Error('DEEPSEEK_API_KEY not set')
+  // DeepSeek's reasoning models (e.g. deepseek-v4-pro) spend hidden thinking tokens from the same
+  // max_tokens budget — small caps come back with empty content, so keep room to actually answer.
+  return completeOpenAICompatible(opts, model, Math.max(maxTokens, 1024), {
+    url: 'https://api.deepseek.com/v1/chat/completions',
+    key,
+    label: 'DeepSeek',
+  })
+}
+
+/** The OpenAI chat-completions request shape, shared by any OpenAI-compatible provider (OpenAI, Venice, DeepSeek). */
 async function completeOpenAICompatible(
   opts: CompleteOpts,
   model: string,

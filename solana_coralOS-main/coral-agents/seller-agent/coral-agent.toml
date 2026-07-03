@@ -30,7 +30,8 @@ TXLINE_BASE_URL = { type = "string", default = "", description = "Override the T
 ANTHROPIC_API_KEY = { type = "string", default = "", description = "Anthropic key for live reads" }
 OPENAI_API_KEY = { type = "string", default = "", description = "OpenAI key; set LLM_PROVIDER=openai to use it" }
 VENICE_API_KEY = { type = "string", default = "", description = "Venice AI key (OpenAI-compatible, free credits); set LLM_PROVIDER=venice to use it" }
-LLM_PROVIDER = { type = "string", default = "", description = "anthropic (default) | openai | venice" }
+DEEPSEEK_API_KEY = { type = "string", default = "", description = "DeepSeek key (OpenAI-compatible) - set with LLM_PROVIDER=deepseek to flip the brain" }
+LLM_PROVIDER = { type = "string", default = "", description = "anthropic (default) | openai | venice | deepseek" }
 LLM_MODEL = { type = "string", default = "", description = "Override the LLM model id" }
 TRACE = { type = "string", default = "", description = "Set to 1 to log settlement checks" }
 
