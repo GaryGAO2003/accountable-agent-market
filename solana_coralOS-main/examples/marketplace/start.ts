@@ -75,12 +75,30 @@ async function main() {
     )
   }
 
+  // Preflight: a brand-new receive wallet can't accept a release below Solana's rent floor
+  // (~0.00089 SOL) — the tx fails wholesale and every round ends 'delivered' but never 'settled'.
+  // One-off fix: send the WALLET address ~0.01 devnet SOL from any funded wallet, then re-run.
+  try {
+    const bal = await fetch(rpc, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getBalance', params: [wallet] }),
+    }).then((r) => r.json() as Promise<{ result?: { value?: number } }>)
+    if ((bal.result?.value ?? 0) < 1_000_000) {
+      console.warn(`[marketplace] WARNING: seller receive wallet ${wallet} holds <0.001 SOL.`)
+      console.warn('[marketplace] Winning bids below the rent floor cannot be released to it — every round')
+      console.warn('[marketplace] will stall at DELIVERED. Send it ~0.01 devnet SOL once, then re-run.')
+    }
+  } catch { /* preflight only — an RPC hiccup should not block the launch */ }
+
   // Every seller is a txline seller sharing the receive wallet + token; they compete on persona/floor
   // (set per coral-agent.toml), not code. The buyer awards best value and settles the winner via escrow.
   const seller = (name: string) =>
     agent(name, {
       SELLER_WALLET: str(wallet), SOLANA_RPC_URL: str(rpc), AGENT_NAME: str(name),
       SERVICES: str('txline'), TXLINE_API_KEY: str(txlineKey),
+      // The deployed devnet arbiter program has a first-come global config (its arbiter key is already
+      // taken), so forked kits can't arbiter-settle — SETTLEMENT_MODE=direct flips to the base escrow.
+      ...(env.SETTLEMENT_MODE ? { SETTLEMENT_MODE: str(env.SETTLEMENT_MODE) } : {}),
       ...(env.TXLINE_BASE_URL ? { TXLINE_BASE_URL: str(env.TXLINE_BASE_URL) } : {}),
       ...llmOpts,
     })
