@@ -44,11 +44,11 @@ docker logs -f seller-cheap    # BID → ESCROW_REQUIRED → DELIVERED
 
 ```
 [buyer]  round 1: WANT txline fixtures budget=0.001
-seller-cheap    BID round=1 price=0.0002 by=seller-cheap note=undercut
-seller-premium  BID round=1 price=0.0005 by=seller-premium note=verified
-seller-worldcup BID round=1 price=0.00045 by=seller-worldcup note=specialist
-[buyer]  picked seller-cheap (0.0002 SOL): cheapest for the fixture list
-[buyer]  round 1: DEPOSITED 0.0002 SOL → seller-cheap
+seller-cheap    BID round=1 price=0.0003 by=seller-cheap note=undercut
+seller-honest   BID round=1 price=0.0005 by=seller-honest note=fair
+seller-premium  BID round=1 price=0.0008 by=seller-premium note=verified
+[buyer]  picked seller-cheap (0.0003 SOL): cheapest for the fixture list
+[buyer]  round 1: DEPOSITED 0.0003 SOL → seller-cheap
 seller-cheap   DELIVERED round=1 {"service":"txline-fixtures","count":…}
 [buyer]  round 1: RELEASED to seller-cheap — https://explorer.solana.com/tx/…?cluster=devnet
 ```

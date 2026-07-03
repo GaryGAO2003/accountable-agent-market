@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 
 /**
  * No route mocking — the app polls the REAL feed server, which folds a real recorded coral transcript
- * (a settled devnet round: cheap wins on price, premium loses, lazy declined coingecko).
+ * (a settled devnet round: cheap wins on price, premium loses, honest declined coingecko).
  */
 test('renders the live auction from the real feed pipeline', async ({ page }) => {
   await page.goto('/?session=fixture')
@@ -11,9 +11,9 @@ test('renders the live auction from the real feed pipeline', async ({ page }) =>
   await expect(settled).toBeVisible()
   await expect(settled.getByTestId('status')).toHaveText('settled')
 
-  // two real bids; the cheaper one won; lazy self-selected out
+  // two real bids; the cheaper one won; honest self-selected out
   await expect(settled.getByTestId('bid')).toHaveCount(2)
-  await expect(settled.getByTestId('declined')).toHaveText(/seller-lazy/)
+  await expect(settled.getByTestId('declined')).toHaveText(/seller-honest/)
   const winner = settled.locator('[data-testid="bid"][data-seller="seller-cheap"]')
   await expect(winner).toHaveClass(/bid-won/)
 

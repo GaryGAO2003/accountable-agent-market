@@ -1,14 +1,15 @@
 # coral-agents
 
-Dockerized agents for the CoralOS round in [`examples/txodds/coral/`](../examples/txodds/coral).
-Each agent connects to a CoralOS MCP session through `startCoralAgent` and trades in a shared market
-thread.
+Dockerized agents for the CoralOS round in [`examples/txodds/coral/`](../examples/txodds/coral) and
+the marketplace in [`examples/marketplace/`](../examples/marketplace). Each agent connects to a
+CoralOS MCP session through `startCoralAgent` and trades in a shared market thread.
 
 | Agent | Role |
 |---|---|
 | `buyer-agent` | Broadcasts `WANT`, collects competing bids, awards best value, opens arbiter escrow, and triggers arbiter release on delivery. |
 | `seller-agent` | TxODDS fulfillment image: bids on `txline`, verifies the funded escrow, and delivers the read. |
 | `seller-worldcup` | Config persona reusing `seller-agent:0.1.0`; the launcher instantiates it three times as specialist/generalist/premium sellers. |
+| `seller-cheap` · `seller-honest` · `seller-premium` | Marketplace persona manifests reusing `seller-agent:0.1.0` — low-price, fair-price, and high-confidence bidding voices; launched by `examples/marketplace/start.ts`. |
 
 Settlement for the TxODDS round is arbiter-gated by default: the buyer funds a vault PDA, the seller
 verifies that vault-backed escrow, and the neutral arbiter key releases payment after delivery.

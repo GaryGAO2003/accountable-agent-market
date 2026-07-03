@@ -10,7 +10,7 @@ describe('RoundCard', () => {
     render(<RoundCard round={settledRound} />)
     expect(screen.getByTestId('round').getAttribute('data-round')).toBe('1')
     expect(screen.getAllByTestId('bid')).toHaveLength(2)
-    expect(screen.getByTestId('declined').getAttribute('data-seller')).toBe('seller-lazy')
+    expect(screen.getByTestId('declined').getAttribute('data-seller')).toBe('seller-honest')
   })
 
   it('highlights the winning bid with a "won" tag', () => {
