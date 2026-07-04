@@ -12,7 +12,7 @@ export function Explainer() {
         <li><b>bid / decline</b> — only the specialist carries <code>txline</code>; the generalists sit out (<em>not in inventory</em>)</li>
         <li><b>award → deposit</b> — the winning bid's price is locked in escrow on devnet</li>
         <li><b>deliver</b> — the seller fetches verified de-margined odds and an LLM value call</li>
-        <li><b>release</b> — escrow pays the seller on delivery (deposit/release link to the Explorer)</li>
+        <li><b>verify → release</b> — the buyer re-executes the read before escrow pays; no delivery or bad data refunds by deadline (all steps link to the Explorer)</li>
       </ol>
     </section>
   )

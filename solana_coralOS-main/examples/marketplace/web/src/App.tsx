@@ -2,12 +2,14 @@ import { useState } from 'react'
 import { useFeed, startMarket } from './api'
 import { MarketView } from './components/MarketView'
 import { Explainer } from './components/Explainer'
+import { FlowView } from './components/FlowView'
 
 /** Read ?session=<id> from the URL so the launcher can deep-link straight to a live market. */
 const initialSession = new URLSearchParams(window.location.search).get('session') ?? ''
 
 export default function App() {
   const [session, setSession] = useState(initialSession)
+  const [tab, setTab] = useState<'market' | 'flow'>('market')
   const [starting, setStarting] = useState(false)
   const [startErr, setStartErr] = useState<string>()
   const { rounds, connected, error } = useFeed(session)
@@ -49,11 +51,23 @@ export default function App() {
       </div>
       {startErr && <p className="start-err" data-testid="start-err">{startErr}</p>}
 
-      <Explainer />
+      <nav className="tabs" aria-label="views">
+        <button className={`tab ${tab === 'market' ? 'tab-active' : ''}`} type="button"
+          data-testid="tab-market" onClick={() => setTab('market')}>Live market</button>
+        <button className={`tab ${tab === 'flow' ? 'tab-active' : ''}`} type="button"
+          data-testid="tab-flow" onClick={() => setTab('flow')}>Follow the money</button>
+      </nav>
 
       <main>
-        {session ? <MarketView rounds={rounds} /> : (
-          <p className="empty">Fund your wallets, then <strong>Start a market</strong> — agents will bid and settle live.</p>
+        {tab === 'flow' ? (
+          <FlowView />
+        ) : (
+          <>
+            <Explainer />
+            {session ? <MarketView rounds={rounds} /> : (
+              <p className="empty">Fund your wallets, then <strong>Start a market</strong> — agents will bid and settle live.</p>
+            )}
+          </>
         )}
       </main>
     </div>

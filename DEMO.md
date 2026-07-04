@@ -95,7 +95,9 @@ slashing, reputation (PLAN.md phases 3–9). The demo now shows both halves: **t
    deadline refunds (+ an opt-in neutral arbiter agent). Next: own arbitration, slashing,
    reputation."
 
-**Close** (10s). Repo URL + "clone, add two keys, `docker compose up`, and the market runs."
+**Close** (10s). Switch to the dashboard's **Follow the money** tab and play the rogue scenario —
+the whole accountability story in one animated shot — then repo URL + "clone, add two keys,
+`docker compose up`, and the market runs."
 
 Live fallback if recording during the pitch: the dashboard keeps producing both settled and
 refunded rounds (~40–70s/round) — let it run in a corner of the screen.
