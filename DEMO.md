@@ -162,7 +162,38 @@ cd ../web && npm install && npm run dev                             # :5173
 Notes: on some networks Node needs `NODE_OPTIONS=--dns-result-order=ipv4first` (TxLINE host over
 IPv6 resets). `TRACE=1` in .env logs Explorer links per settlement.
 
-## Verified live artifacts (2026-07-03)
+## Verified live artifacts
+
+### L2 prevention — the Egress PEP, live (session `34526ba2-2ec4-4466-9acc-1ee1eb3f476d`, 2026-07-04)
+
+**All three accountability outcomes in one live market** — trust working, trust broken but money
+safe, and trust refused before any money moves:
+
+- Round 1 **settled** — `seller-cheap` won (0.0003); the PEP **allowed** the payout (recipient = the
+  expected receive wallet) and the escrow released:
+  deposit `https://explorer.solana.com/tx/Dwt5GpkGWSQTqUEREdmH1o3TTVKYh9q2cSjZCT78BhsZJT6kVnLtDtyusXo3fPLZkohYnkLJtLJ55PadL7DEtjN?cluster=devnet`
+  · release `https://explorer.solana.com/tx/2WXfMUpcB7D5SaB1gZuwPaEAYFnniazTqN8zKvCvB1KaTbyAEV4edyGhXtupfrfXNtk9k7LH7myTkNkwKjzuZyWr?cluster=devnet`
+- Round 2 **refunded** — `seller-rogue` won (0.00025), funded, ghosted; the buyer reclaimed after
+  the deadline:
+  refund `https://explorer.solana.com/tx/ArtyHktveU2txzazdyEruDDjvYffoZogEhyQo9ded4ti69mcxSnniHmiWWtzVH4hxg7a4QivyxoncsMBdNXcKmM?cluster=devnet`
+- Rounds 3 & 4 **blocked (PEP)** — `seller-hijack` won, then its escrow terms named a **foreign
+  payout wallet** (`APTHoJ11s7Ji7RC9rMq4vwTMDQumW3HGiEBcGWPXV6Rf`, not its market identity). The
+  buyer's Egress PEP refused the deposit **before signing anything**, and broadcast the refusal to
+  the thread (the seller received it):
+
+  ```
+  [egress] {"agent":"buyer","action":"deposit 0.00028 SOL -> APTHoJ11…V6Rf","decision":"DENY","code":"RECIPIENT_NOT_ALLOWED",…}
+  [buyer] round 3: deposit blocked (RECIPIENT_NOT_ALLOWED)
+  → thread: EGRESS_DENIED round=3 code=RECIPIENT_NOT_ALLOWED action=deposit
+  ```
+
+  **There is deliberately no Explorer link here — that is the point.** A prevented action has no
+  signature; the proof is the audit line plus the deposit that never appears, set against the
+  settled round's real link above. The hijacker won twice and moved **zero** SOL. (Every honest
+  payout is allow-audited too — the round-1/2 deposits each carry an `[egress] …"decision":"ALLOW"`
+  line — so a blocked round reads as a visible exception, not silence.)
+
+### Two-act session (2026-07-03)
 
 **Two-act session** (`51e61f6b-bbe2-49f3-9e84-d7ced9fbe7e3`) — trust working and trust broken in
 the same live market:
