@@ -116,7 +116,9 @@ async function main() {
     })
 
   // seller-rogue is the accountability persona: wins low, never delivers, so the buyer refunds after the deadline.
-  const sellers = ['seller-cheap', 'seller-honest', 'seller-premium', 'seller-rogue']
+  // seller-hijack is the egress-PEP persona: undercuts to win, then names a hijacked payout wallet in its escrow
+  // terms - the buyer's PEP pins the expected payout and refuses to deposit (RECIPIENT_NOT_ALLOWED, no SOL moves).
+  const sellers = ['seller-cheap', 'seller-honest', 'seller-premium', 'seller-rogue', 'seller-hijack']
 
   // Optional broker swarm (ENABLE_BROKER=1, see coral-agents/broker/README.md): the buyer buys from a
   // broker, which resells from the real sellers. Needs a funded broker wallet + seller receive wallets —
@@ -151,9 +153,14 @@ async function main() {
     ...(env.ARBITER_KEYPAIR_B58 ? { ARBITER_KEYPAIR_B58: str(env.ARBITER_KEYPAIR_B58) } : {}),
     AGENT_NAME: str('buyer-agent'),
     SOLANA_RPC_URL: str(rpc),
-    // F3: the expected seller payout wallet — the buyer binds the escrow seller= to it (broker if enabled).
-    SELLER_WALLET: str(buyerExpectedWallet),
+    // F3 / egress PEP: the expected seller payout wallet — the buyer binds it as the sole allowed recipient
+    // (the broker wallet if the broker is enabled, else the shared receive wallet). A hijacked terms wallet
+    // (e.g. seller-hijack) then trips RECIPIENT_NOT_ALLOWED before any deposit.
+    EXPECTED_SELLER_WALLET: str(buyerExpectedWallet),
     BUYER_MAX_SOL: f64(Number(env.BUYER_MAX_SOL ?? '0.001')),
+    // Egress PEP caps (optional overrides): velocity (money actions/min) + cumulative session budget in SOL.
+    ...(env.BUYER_MAX_TX_PER_MIN ? { BUYER_MAX_TX_PER_MIN: f64(Number(env.BUYER_MAX_TX_PER_MIN)) } : {}),
+    ...(env.BUYER_SESSION_BUDGET_SOL ? { BUYER_SESSION_BUDGET_SOL: f64(Number(env.BUYER_SESSION_BUDGET_SOL)) } : {}),
     BUYER_SERVICE: str(buyerService),
     BUYER_ARG: str(buyerArg),
     ...(buyerArgs ? { BUYER_ARGS: str(buyerArgs) } : {}),

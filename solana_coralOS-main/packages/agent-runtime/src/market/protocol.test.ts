@@ -4,6 +4,7 @@ import {
   formatEscrowRequired, parseEscrowRequired, formatDeposited, parseDeposited,
   formatDelivered, parseDelivered, formatVerified, parseVerified,
   formatArbiterReview, parseArbiterReview, formatArbiterDecision, parseArbiterDecision,
+  formatEgressDenied, parseEgressDenied,
   selectBids, pickCheapest, verb, messageRound,
   type Bid,
 } from './protocol.js'
@@ -143,6 +144,32 @@ describe('selection', () => {
   })
   it('pickCheapest picks the lowest price', () => {
     expect(pickCheapest(selectBids(bids, 7))?.by).toBe('cheap')
+  })
+})
+
+describe('EGRESS_DENIED round-trip', () => {
+  it('formats the frozen line and parses it back, detail runs to end of line', () => {
+    const msg = formatEgressDenied(9, 'BUDGET_EXCEEDED', 'deposit', 'cumulative 1000001 lamports would exceed budget 1000000')
+    expect(msg).toBe('EGRESS_DENIED round=9 code=BUDGET_EXCEEDED action=deposit detail=cumulative 1000001 lamports would exceed budget 1000000')
+    expect(parseEgressDenied(msg)).toEqual({
+      round: 9,
+      code: 'BUDGET_EXCEEDED',
+      action: 'deposit',
+      detail: 'cumulative 1000001 lamports would exceed budget 1000000',
+    })
+  })
+  it('carries the caller-emitted reserved codes (e.g. SCHEMA_INVALID) unchanged', () => {
+    const msg = formatEgressDenied(3, 'SCHEMA_INVALID', 'http', 'malformed DELIVERED payload')
+    expect(parseEgressDenied(msg)).toEqual({ round: 3, code: 'SCHEMA_INVALID', action: 'http', detail: 'malformed DELIVERED payload' })
+  })
+  it('parses an empty detail', () => {
+    expect(parseEgressDenied(formatEgressDenied(1, 'AMOUNT_INVALID', 'transfer', ''))).toEqual({
+      round: 1, code: 'AMOUNT_INVALID', action: 'transfer', detail: '',
+    })
+  })
+  it('returns null on a non-EGRESS_DENIED line', () => {
+    expect(parseEgressDenied('WANT round=7 service=x arg=y budget=0.001')).toBeNull()
+    expect(parseEgressDenied('nonsense')).toBeNull()
   })
 })
 

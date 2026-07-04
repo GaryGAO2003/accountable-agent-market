@@ -16,7 +16,9 @@
  *   ARBITER_REVIEW round=<n> service=<name> arg="<arg>" reference=<R> seller=<addr> payer=<addr> delivery=<json>
  *   ARBITER_VERIFIED / ARBITER_REJECTED round=<n> ok=<1|0> code=<code> reason="<why>"
  *   (then RELEASED / REFUNDED reuse the round tag)
+ *   EGRESS_DENIED round=<n> code=<CODE> action=<deposit|release|refund|http> detail=<free text>  agent -> market/dashboard
  */
+import type { ReasonCode } from './egress.js'
 
 export interface Want {
   round: number
@@ -253,6 +255,27 @@ export function parseArbiterDecision(text: string): ArbiterDecision | null {
   const reason = quoted(text, 'reason') ?? ''
   if (round == null || !code) return null
   return { round, ok: okTok === '1' || v === 'ARBITER_VERIFIED', code, reason }
+}
+
+// -- EGRESS_DENIED ---------------------------------------------------------------
+/**
+ * Surface an egress refusal onto the shared thread so the dashboard can show *why* an agent held back.
+ * The line is **frozen** - the live feed regexes it - so `code` and `action` stay single tokens and the
+ * free-text `detail` runs to end of line (it is the last field for exactly that reason). `action` is the
+ * bare action kind (`deposit|release|refund|transfer|http`), `code` any `ReasonCode` (including the
+ * caller-emitted reserved ones like SCHEMA_INVALID / INTEGRITY_MISMATCH).
+ */
+export function formatEgressDenied(round: number, code: ReasonCode, action: string, detail: string): string {
+  return `EGRESS_DENIED round=${round} code=${code} action=${action} detail=${detail}`
+}
+export function parseEgressDenied(text: string): { round: number; code: string; action: string; detail: string } | null {
+  if (verb(text) !== 'EGRESS_DENIED') return null
+  const round = num(text, 'round')
+  const code = tok(text, 'code')
+  const action = tok(text, 'action')
+  if (round == null || !code || !action) return null
+  const detail = text.match(/\sdetail=(.*)$/)?.[1] ?? '' // free text, to end of line
+  return { round, code, action, detail }
 }
 
 // -- selection -------------------------------------------------------------------

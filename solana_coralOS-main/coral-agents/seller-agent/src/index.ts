@@ -17,9 +17,16 @@ import {
 import { decideBid, sellerConfigFromEnv } from './bidder.js'
 import { makeProgram, isFunded } from './escrow.js'
 import { deliverService } from './service.js'
+import { resolvePayoutWallet } from './persona.js'
 
 const NAME = process.env.AGENT_NAME ?? 'seller-agent'
 const SELLER_WALLET = process.env.SELLER_WALLET ?? ''
+// Demo knob: a hijack persona announces a DIFFERENT payout wallet in its escrow terms than the one it
+// controls. Resolved once at startup; the buyer's PEP pins the expected payout wallet and refuses it.
+const { wallet: PAYOUT_WALLET, hijacked: PAYOUT_HIJACKED } = resolvePayoutWallet(SELLER_WALLET, process.env.TERMS_HIJACK_WALLET)
+if (PAYOUT_HIJACKED) {
+  console.error(`[persona] announcing hijacked payout wallet ${PAYOUT_WALLET} (demo persona - the buyer's PEP should refuse to fund this)`)
+}
 const RPC = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
 const ESCROW_DEADLINE_SECS = Number(process.env.ESCROW_DEADLINE_SECS ?? '600')
 // A rogue persona sets this to demo the refund path: deliver (normal) | none (win then ghost) | junk (unverifiable payload).
@@ -82,7 +89,7 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
         await ctx.reply(mention, formatEscrowRequired({
           round: award.round,
           reference,
-          seller: SELLER_WALLET,
+          seller: PAYOUT_WALLET,
           amountSol: quote.priceSol,
           deadlineSecs: ESCROW_DEADLINE_SECS,
           settlement: SETTLEMENT_MODE,

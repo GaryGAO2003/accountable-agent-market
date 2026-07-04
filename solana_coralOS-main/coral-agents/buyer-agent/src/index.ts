@@ -20,6 +20,7 @@ import {
   formatWant, parseBid, parseEscrowRequired, formatAward, formatDeposited,
   parseDelivered, formatVerified, formatArbiterReview,
   selectBids, pickCheapest,
+  commitEgress, newEgressState, AuditLog,
   type Bid, type Delivered, type EscrowTerms, type CoralAgentContext,
 } from '@pay/agent-runtime'
 import { PublicKey } from '@solana/web3.js'
@@ -28,7 +29,7 @@ import {
   ARBITER_PROGRAM_ID, ensureArbiterConfig, ensureArbiterFunded, makeArbiter,
   openArbitrated, arbitrateRelease, arbitratedEscrowPda,
 } from './arbiter.js'
-import { payoutMatches } from './guard.js'
+import { buildEgressPolicy, checkEgressAudited } from './guard.js'
 import { verifyDelivery } from './verify.js'
 
 const RPC = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
@@ -46,9 +47,25 @@ const SELLERS = (process.env.MARKET_SELLERS ?? 'seller-worldcup,seller-fast,sell
   .split(',').map((s) => s.trim()).filter(Boolean)
 const ARBITER_AGENT_ENABLED = process.env.ARBITER_AGENT_ENABLED === '1'
 const ARBITER_AGENT_NAME = process.env.ARBITER_AGENT_NAME ?? 'arbiter-agent'
-// F3: the payout wallet the buyer expects (personas share one in the demo). If set, the buyer refuses
-// to deposit to an ESCROW_REQUIRED whose seller= pubkey differs - binding the award to the payout.
-const EXPECTED_SELLER_WALLET = process.env.SELLER_WALLET ?? ''
+// F3 / egress recipient allowlist: the payout wallet the buyer expects sellers to be paid at (the demo
+// personas share one receive wallet). When set it becomes the PEP's sole allowed recipient, so an
+// ESCROW_REQUIRED naming a different seller= trips RECIPIENT_NOT_ALLOWED before any deposit. Read from
+// EXPECTED_SELLER_WALLET, falling back to the legacy SELLER_WALLET alias.
+const EXPECTED_SELLER_WALLET = process.env.EXPECTED_SELLER_WALLET ?? process.env.SELLER_WALLET ?? ''
+// Egress PEP velocity cap: max money actions (deposit/release/refund) per rolling 60s. 0/NaN -> default 30.
+// Default sits well above the market's natural cadence (a settled round commits 2 actions, and escrow
+// deadlines pace rounds to well under 15/min) so it never false-trips a demo, while still catching a
+// runaway loop hammering payments. Lower it in .env to demo the throttle deliberately.
+const BUYER_MAX_TX_PER_MIN = Number(process.env.BUYER_MAX_TX_PER_MIN ?? '30') || 30
+// Egress PEP budget cap: cumulative deposit spend for the whole session, in SOL. 0 = no cap.
+const BUYER_SESSION_BUDGET_SOL = Number(process.env.BUYER_SESSION_BUDGET_SOL ?? '0')
+// The session egress policy - the code-enforced fence every money action passes before it leaves the
+// buyer. Built once from env at startup (read-only for the session); mutable counters live in egressState.
+const egressPolicy = buildEgressPolicy({
+  expectedSellerWallet: EXPECTED_SELLER_WALLET,
+  maxTxPerMin: BUYER_MAX_TX_PER_MIN,
+  sessionBudgetSol: BUYER_SESSION_BUDGET_SOL,
+})
 const SETTLEMENT_MODE = (process.env.SETTLEMENT_MODE ?? 'arbiter').toLowerCase()
 const trace = process.env.TRACE === '1'
 
@@ -99,6 +116,11 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
   const arbiter = SETTLEMENT_MODE === 'arbiter' ? loadKeypairB58('ARBITER_KEYPAIR_B58') : null
   console.error(`[buyer] market buyer - wallet=${buyer.publicKey.toBase58()} budget=${BUDGET} sellers=[${SELLERS.join(',')}]`)
 
+  // One egress state + audit log for the whole session: check -> act -> commit advances egressState only
+  // after an action lands, and every verdict (allow or deny) is appended to auditLog (docker logs = sink).
+  const egressState = newEgressState()
+  const auditLog = new AuditLog('buyer')
+
   const threadParticipants = ARBITER_AGENT_ENABLED ? [...SELLERS, ARBITER_AGENT_NAME] : SELLERS
   for (const s of threadParticipants) {
     try { await ctx.waitForAgent(s, 8000) } catch { /* seller may already be present */ }
@@ -137,8 +159,16 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
       // -- settle through escrow: deposit -> DEPOSITED -> wait DELIVERED -> release
       const terms = await waitFor<EscrowTerms>(ctx, round, parseEscrowRequired, 15_000)
       if (!terms) { console.error(`[buyer] round ${round}: no escrow terms from ${winner.by}`); await sleep(CYCLE_MS); continue }
-      if (!payoutMatches(terms.seller, EXPECTED_SELLER_WALLET)) {
-        console.error(`[buyer] round ${round}: escrow payout ${terms.seller} != expected ${EXPECTED_SELLER_WALLET} - skipping`)
+      // EGRESS PEP - gate the deposit before either settlement rail signs anything: it locks the buyer's
+      // own funds toward the seller's payout wallet + reference carried in ESCROW_REQUIRED. A hijacked
+      // ESCROW_REQUIRED naming an unexpected seller= trips RECIPIENT_NOT_ALLOWED here (subsuming the old
+      // payoutMatches F3 bind); a replayed reference / over-budget / burst is caught too. On a deny no tx
+      // is signed - the verdict is audited, EGRESS_DENIED goes to the winner, and the round is skipped.
+      const depositAction = { kind: 'deposit', recipient: terms.seller, amountSol: terms.amountSol, reference: terms.reference } as const
+      const depositVerdict = await checkEgressAudited(egressState, egressPolicy, auditLog, round, depositAction,
+        (line) => ctx.send(line, thread, [winner.by]))
+      if (!depositVerdict.allow) {
+        console.error(`[buyer] round ${round}: deposit blocked (${depositVerdict.code}) - ${depositVerdict.detail}`)
         await sleep(CYCLE_MS); continue
       }
 
@@ -155,6 +185,7 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
       } else {
         depositSig = await deposit(program, buyer, seller, reference, terms.amountSol, terms.deadlineSecs)
       }
+      commitEgress(egressState, depositAction, Date.now()) // check -> act -> commit: the funds have now left
       const depositedAtMs = Date.now() // anchors the on-chain refund deadline for the no-delivery path
       // Reclaim the deposit once the on-chain deadline passes - shared by the no-delivery and
       // failed-verification outcomes. Direct escrow only: the arbiter path owns its own refunds.
@@ -163,6 +194,16 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
         // Wait out the deadline (+5s for cluster clock skew), then reclaim with refund() and broadcast it.
         const waitMs = depositedAtMs + terms.deadlineSecs * 1000 + 5_000 - Date.now()
         if (waitMs > 0) await sleep(waitMs)
+        // EGRESS PEP - a refund returns escrow to the buyer's OWN wallet (no recipient allowlist, no
+        // budget: this is money coming back), but it still passes the velocity fence + amount sanity. If
+        // the PEP denies it, just log and leave the funds locked (they stay refundable) - no thread notice.
+        const refundAction = { kind: 'refund', recipient: buyer.publicKey.toBase58(), amountSol: terms.amountSol } as const
+        const refundVerdict = await checkEgressAudited(egressState, egressPolicy, auditLog, round, refundAction,
+          (line) => console.error(`[buyer] round ${round}: ${line}`))
+        if (!refundVerdict.allow) {
+          console.error(`[buyer] round ${round}: refund blocked by egress (${refundVerdict.code}) - funds stay locked`)
+          return
+        }
         let refundSig: string | null = null
         for (let attempt = 1; attempt <= 4 && !refundSig; attempt++) {
           try {
@@ -174,6 +215,7 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
           }
         }
         if (refundSig) {
+          commitEgress(egressState, refundAction, Date.now()) // check -> act -> commit
           console.error(`[buyer] round ${round}: REFUNDED from ${winner.by} - ${expl('tx', refundSig)}`)
           await ctx.send(`REFUNDED round=${round} sig=${refundSig} settlement=direct`, thread, [winner.by])
         }
@@ -206,6 +248,8 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
 
       if (delivered) {
         if (ARBITER_AGENT_ENABLED) {
+          // Arbiter-agent settlement: the neutral arbiter agent re-execs + signs the release/refund, so
+          // there is no direct buyer egress here to gate - its own PEP fences that tx on its side.
           if (requestedSettlement !== 'arbiter' || !vault || !arbiter) {
             console.error(`[buyer] round ${round}: arbiter-agent mode requires settlement=arbiter - funds stay in escrow`)
             await sleep(CYCLE_MS)
@@ -241,9 +285,21 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
           await sleep(CYCLE_MS)
           continue
         }
+        // EGRESS PEP - releasing pays the seller out of escrow; gate the payout (recipient allowlist +
+        // velocity) before signing. A denied release leaves the round unsettled (funds stay locked - the
+        // deadline refund path may still reclaim them later).
+        const releaseAction = { kind: 'release', recipient: terms.seller, amountSol: terms.amountSol } as const
+        const releaseVerdict = await checkEgressAudited(egressState, egressPolicy, auditLog, round, releaseAction,
+          (line) => ctx.send(line, thread, [winner.by]))
+        if (!releaseVerdict.allow) {
+          console.error(`[buyer] round ${round}: release blocked (${releaseVerdict.code}) - funds stay in escrow`)
+          await sleep(CYCLE_MS)
+          continue
+        }
         const releaseSig = requestedSettlement === 'arbiter' && arbiter
           ? await arbitrateRelease(makeArbiter(arbiter, RPC), arbiter, seller, reference)
           : await release(program, buyer, seller, reference)
+        commitEgress(egressState, releaseAction, Date.now()) // check -> act -> commit
         const releaseVerb = requestedSettlement === 'arbiter' ? 'ARBITER_RELEASED' : 'RELEASED'
         console.error(`[buyer] round ${round}: ${releaseVerb} to ${winner.by} - ${expl('tx', releaseSig)}`)
         await ctx.send(`${releaseVerb} round=${round} sig=${releaseSig} settlement=${requestedSettlement}`, thread, [winner.by])
