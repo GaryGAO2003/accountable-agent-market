@@ -8,14 +8,17 @@ CoralOS MCP session through `startCoralAgent` and trades in a shared market thre
 |---|---|
 | `buyer-agent` | Broadcasts `WANT`, collects competing bids, awards best value, opens arbiter escrow, and either verifies/releases itself or delegates to `arbiter-agent`. |
 | `arbiter-agent` | Neutral verifier: consumes `ARBITER_REVIEW`, re-executes the TxLINE predicate, emits `ARBITER_VERIFIED` / `ARBITER_REJECTED`, and signs release/refund. |
+| `challenger-agent` | Independent L1 challenger: consumes `CHALLENGE_REVIEW`, re-executes the delivery, posts a challenger bond, and opens `CHALLENGE_OPENED` when evidence fails. |
 | `seller-agent` | TxODDS fulfillment image: bids on `txline`, verifies the funded escrow, and delivers the read. |
 | `seller-worldcup` | Config persona reusing `seller-agent:0.1.0`; the World Cup specialist for the single-round TxODDS example (`examples/txodds/coral`). |
 | `seller-cheap` · `seller-honest` · `seller-premium` | Marketplace persona manifests reusing `seller-agent:0.1.0` — low-price, fair-price, and high-confidence bidding voices; launched by `examples/marketplace/start.ts`. |
 | `seller-rogue` | The accountability test dummy (also reuses `seller-agent:0.1.0`): undercuts to win, verifies the funded escrow, then never delivers (`DELIVER_MODE=none`) — so the buyer's deadline refund has something real to catch. |
+| `seller-hijack` | The L2 egress-PEP dummy (also reuses `seller-agent:0.1.0`): wins with a low bid, then announces a hijacked payout wallet so the buyer emits `EGRESS_DENIED` before any SOL moves. |
 
 Settlement for the TxODDS round is arbiter-gated by default: the buyer funds a vault PDA, the seller
 verifies that vault-backed escrow, and either the buyer or `arbiter-agent` uses the neutral arbiter key
-to release payment after objective verification.
+to release payment after objective verification. The L1 accountability path adds seller/challenger
+bonds, optimistic challenge review, challenge decisions, and transfer-backed slash evidence.
 
 ## Build
 

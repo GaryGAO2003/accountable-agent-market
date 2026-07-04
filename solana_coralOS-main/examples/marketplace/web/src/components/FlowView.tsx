@@ -17,7 +17,7 @@ const RELEASED_TX =
 const REFUNDED_TX =
   'https://explorer.solana.com/tx/4Gpytv3y98LHa5bPCuL8xSpmFCyctxzMPQXjva2GWUzpwiWnerPcfa3QDQ9ysCuWxsvrqZF6EDeGcXCs182nCiBQ?cluster=devnet'
 
-type Scenario = 'honest' | 'ghost' | 'fraud'
+type Scenario = 'honest' | 'ghost' | 'fraud' | 'hijack'
 /** One receipt line: parts render in order, `{ b }` parts in bold (colored by `cls`). */
 interface LogLine { cls: string; parts: Array<string | { b: string }> }
 
@@ -37,7 +37,31 @@ const L: Record<string, LogLine> = {
   waitF: { cls: 'lv-us', parts: ['bad data = no delivery — deadline hits, buyer signs ', { b: 'refund()' }] },
   rel: { cls: 'lv-rel', parts: [{ b: 'RELEASED' }, ' sig=3f6RvMv… — vault → seller wallet'] },
   ref: { cls: 'lv-ref', parts: [{ b: 'REFUNDED' }, ' sig=4Gpytv3… — vault → buyer wallet · rogue earned 0'] },
+  escHj: { cls: 'lv-x', parts: [{ b: 'ESCROW_REQUIRED' }, ' payout=9xF0…rEIGN — seller names a wallet that is not its market identity'] },
+  denyHj: { cls: 'lv-us', parts: [{ b: 'EGRESS_DENIED' }, ' code=RECIPIENT_NOT_ALLOWED action=deposit — payout not allow-listed; deposit refused, 0 SOL moved'] },
 }
+
+/**
+ * The Egress PEP is a code-enforced, multi-dimensional policy engine — a firewall every outbound
+ * action passes through. The hijack scene shows a deposit inspected against these six checks: five
+ * pass, the recipient isn't allow-listed, so the whole action is DENIED. Values are illustrative demo
+ * data (like the rest of FlowView); the point is the breadth — many independent checks, one gate.
+ */
+const PEP_CHECKS: Array<{ id: string; ok: boolean; label: string; detail: string }> = [
+  { id: 'amount',    ok: true,  label: 'amount valid',               detail: '' },
+  { id: 'budget',    ok: true,  label: 'within budget',              detail: '0.0008 / 0.05 SOL' },
+  { id: 'velocity',  ok: true,  label: 'within velocity',            detail: '2 / 30 per min' },
+  { id: 'reference', ok: true,  label: 'reference fresh · no replay', detail: '' },
+  { id: 'host',      ok: true,  label: 'outbound host allow-listed', detail: '' },
+  { id: 'recipient', ok: false, label: 'recipient allow-listed',     detail: '9xF0…rEIGN ≠ HjTX…XR7h' },
+]
+/** The full egress reason-code taxonomy. RECIPIENT_NOT_ALLOWED is the one that fires here — the other
+ *  eight are enforced just the same; the breadth is the message ("this is a whole policy engine"). */
+const PEP_CODES = [
+  'RECIPIENT_NOT_ALLOWED', 'BUDGET_EXCEEDED', 'VELOCITY_EXCEEDED',
+  'REFERENCE_REUSED', 'HOST_NOT_ALLOWED', 'AMOUNT_INVALID',
+  'SCHEMA_INVALID', 'INTEGRITY_MISMATCH', 'REFERENCE_UNKNOWN',
+]
 
 interface Badge { state: string; cls: string }
 const IDLE = {
@@ -49,7 +73,10 @@ const IDLE = {
   bal: { buyer: '1.00000', vault: '0.00000', seller: '2.43100' },
   fly: { cls: '', text: '📦 DELIVERED —' },
   live: { dep: false, rel: false, ref: false },
-  verdict: null as 'paid' | 'back' | null,
+  // Egress PEP inspection panel (hijack scenario only): on = panel visible, revealed = how many of
+  // the six checks have streamed in, denied = the DENIED verdict + reason-code taxonomy are shown.
+  pep: { on: false, revealed: 0, denied: false },
+  verdict: null as 'paid' | 'back' | 'blocked' | null,
   sellerNote: 'delivers real TxODDS data… or tries not to',
   lines: [] as LogLine[],
 }
@@ -99,12 +126,46 @@ export function FlowView() {
     setS({ ...IDLE, scn: name })
     const honest = name === 'honest'
     const ghost = name === 'ghost'
+    const hijack = name === 'hijack'
     const amt = honest ? '0.0008' : '0.00025'
     let t = 0
 
     at(t, () => { patch({ chips: { want: 'on', bids: '', award: '' } }); put(L.want) }); t += STEP
     at(t, () => { patch({ chips: { want: 'on', bids: 'on', award: '' } }); put(L.bids) }); t += STEP
     at(t, () => { patch({ chips: { want: 'on', bids: 'on', award: 'won' } }); put(honest ? L.awardH : L.award) }); t += STEP
+
+    if (hijack) {
+      // The seller wins, then names a FOREIGN payout wallet. Before a single lamport can leave, the
+      // buyer's Egress PEP — a code-enforced policy engine, the centerpiece of this scene — inspects
+      // the deposit against six independent checks. Five pass; the recipient isn't allow-listed, so the
+      // whole action is DENIED: the coin never leaves home, nothing touches the vault or the chain. No
+      // balance moves (buyer stays at the full starting balance, vault 0, seller earns nothing), and
+      // there is deliberately no Explorer link because nothing settled on-chain (the honesty rule).
+      at(t, () => {
+        patch({ fly: { cls: 'bad', text: '⚠ payout → foreign wallet' }, pep: { on: true, revealed: 0, denied: false } })
+        put(L.escHj)
+      }); t += STEP
+      // Reveal the six checks one-by-one (~320ms apart). In reduced motion `at` fires synchronously, so
+      // all six land at once and the panel renders complete for tests — same pattern as the rest of FlowView.
+      for (let i = 1; i <= PEP_CHECKS.length; i++) {
+        at(t, () => setS((prev) => ({ ...prev, pep: { ...prev.pep, revealed: i } })))
+        t += 320
+      }
+      // The recipient check fails → DENIED: refuse the deposit, stamp the reason code and the taxonomy.
+      at(t, () => {
+        pulse('lock', 'refused ✕', 'bad')
+        put(L.denyHj)
+        setS((prev) => ({ ...prev, pep: { ...prev.pep, denied: true } }))
+      }); t += STEP
+      at(t, () => {
+        setS((prev) => ({
+          ...prev,
+          verdict: 'blocked',
+          sellerNote: 'won the auction — payout wallet refused, earned nothing',
+        }))
+      })
+      return
+    }
 
     at(t, () => { flyCoin('dep', 1100, `◉ ${amt}`); put(honest ? L.depH : L.dep) }); t += 1100
     at(t, () => {
@@ -168,6 +229,8 @@ export function FlowView() {
           data-testid="flow-scn-ghost" onClick={() => play('ghost')}>✕ rogue wins &amp; ghosts</button>
         <button className={`scn scn-fraud ${s.scn === 'fraud' ? 'on' : ''}`} type="button"
           data-testid="flow-scn-fraud" onClick={() => play('fraud')}>△ seller ships fake data</button>
+        <button className={`scn scn-hijack ${s.scn === 'hijack' ? 'on' : ''}`} type="button"
+          data-testid="flow-scn-hijack" onClick={() => play('hijack')}>🛡 seller swaps payout wallet</button>
       </div>
 
       <div className="canvas-scroll">
@@ -224,6 +287,55 @@ export function FlowView() {
             Money returned — cheater earned 0{' '}
             <a href={REFUNDED_TX} target="_blank" rel="noreferrer">REFUNDED ↗ real devnet tx</a>
           </div>
+          <div className={`verdict verdict-blocked ${s.verdict === 'blocked' ? 'show' : ''}`} data-testid="flow-verdict-blocked">
+            🛡 PEP blocked · RECIPIENT_NOT_ALLOWED
+            <span className="verdict-note">deposit refused — nothing moved, nothing settled on-chain</span>
+          </div>
+
+          {/* Egress PEP inspection panel — the "aha, L2 is a policy engine" centerpiece. Hijack only:
+              a code-enforced firewall inspecting one deposit across six checks before any money can move. */}
+          {s.pep.on && (
+            <div className="pep-overlay">
+              <div className="pep-console" data-testid="flow-pep-panel" role="group" aria-label="Egress PEP inspection">
+                <div className="pep-head">
+                  <span className="pep-badge">🛡 EGRESS PEP</span>
+                  <span className="pep-head-txt">code-enforced — the LLM can't override it</span>
+                </div>
+                <div className="pep-subject">
+                  inspecting <b>deposit 0.00028 SOL</b> → <span className="pep-foreign">9xF0…rEIGN</span>
+                </div>
+                <div className="pep-checks">
+                  {PEP_CHECKS.slice(0, s.pep.revealed).map((c) => (
+                    <div key={c.id} className={`pep-check ${c.ok ? 'ok' : 'bad'}`}
+                      data-testid={c.id === 'recipient' ? 'flow-pep-check-recipient' : undefined}>
+                      <span className="pep-mark">{c.ok ? '✓' : '✕'}</span>
+                      <span className="pep-label">{c.label}</span>
+                      {c.detail ? <span className="pep-detail">{c.detail}</span> : null}
+                    </div>
+                  ))}
+                </div>
+                {s.pep.denied ? (
+                  <div className="pep-verdict">
+                    <span className="pep-stamp">⛔ DENIED</span>
+                    <span className="pep-code">RECIPIENT_NOT_ALLOWED</span>
+                    <span className="pep-moved">0 SOL moved</span>
+                  </div>
+                ) : null}
+                {s.pep.denied ? (
+                  <div className="pep-taxonomy" data-testid="flow-pep-taxonomy">
+                    <span className="pep-tax-label">enforced — one of nine egress codes</span>
+                    <div className="pep-tax-codes">
+                      {PEP_CODES.map((code) => (
+                        <span key={code} className={`pep-tax-code ${code === 'RECIPIENT_NOT_ALLOWED' ? 'active' : ''}`}>
+                          {code}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -242,13 +354,15 @@ export function FlowView() {
 
       <div className="flow-legend">
         <span className="key"><span className="sw sw-gray" /> negotiation — free, no funds move</span>
-        <span className="key"><span className="sw sw-violet" /> our software holds &amp; checks</span>
+        <span className="key"><span className="sw sw-violet" /> our software holds, checks &amp; refuses bad payouts</span>
         <span className="key"><span className="sw sw-mint" /> released to the seller</span>
         <span className="key"><span className="sw sw-coral" /> refunded to the buyer</span>
       </div>
 
-      <p className="punch">A rogue can win the auction — it still earns nothing. <b>Cheating costs the cheater,
-      never the buyer</b> — every hop above is a real Solana devnet transaction.</p>
+      <p className="punch">A seller can win the auction and still earn nothing — by ghosting, shipping fake
+      data, or swapping in a foreign payout wallet. The first two refund on-chain; the last never deposits
+      at all — our policy check stops it before a single lamport moves. <b>Cheating costs the cheater,
+      never the buyer.</b></p>
     </section>
   )
 }

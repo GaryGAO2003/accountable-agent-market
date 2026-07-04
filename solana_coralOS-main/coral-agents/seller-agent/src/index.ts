@@ -12,19 +12,30 @@ import type { Program } from '@coral-xyz/anchor'
 import { PublicKey } from '@solana/web3.js'
 import {
   startCoralAgent, verb, parseWant, formatBid, parseAward, formatEscrowRequired, parseDeposited,
-  formatDelivered,
+  formatDelivered, formatBondPosted,
 } from '@pay/agent-runtime'
 import { decideBid, sellerConfigFromEnv } from './bidder.js'
 import { makeProgram, isFunded } from './escrow.js'
 import { deliverService } from './service.js'
+import { resolvePayoutWallet } from './persona.js'
+import { postSellerBond } from './bond.js'
 
 const NAME = process.env.AGENT_NAME ?? 'seller-agent'
 const SELLER_WALLET = process.env.SELLER_WALLET ?? ''
+// Demo knob: a hijack persona announces a DIFFERENT payout wallet in its escrow terms than the one it
+// controls. Resolved once at startup; the buyer's PEP pins the expected payout wallet and refuses it.
+const { wallet: PAYOUT_WALLET, hijacked: PAYOUT_HIJACKED } = resolvePayoutWallet(SELLER_WALLET, process.env.TERMS_HIJACK_WALLET)
+if (PAYOUT_HIJACKED) {
+  console.error(`[persona] announcing hijacked payout wallet ${PAYOUT_WALLET} (demo persona - the buyer's PEP should refuse to fund this)`)
+}
 const RPC = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
 const ESCROW_DEADLINE_SECS = Number(process.env.ESCROW_DEADLINE_SECS ?? '600')
 // A rogue persona sets this to demo the refund path: deliver (normal) | none (win then ghost) | junk (unverifiable payload).
 const DELIVER_MODE = (process.env.DELIVER_MODE ?? 'deliver').toLowerCase()
 const SETTLEMENT_MODE = (process.env.SETTLEMENT_MODE ?? 'arbiter').toLowerCase() === 'direct' ? 'direct' : 'arbiter'
+const BOND_SOL = Number(process.env.SELLER_BOND_SOL ?? '0.0001')
+const BOND_HOLDER_WALLET = process.env.BOND_HOLDER_WALLET ?? ''
+const MAX_BOND_SOL = Number(process.env.MAX_BOND_SOL ?? '0.01')
 const cfg = sellerConfigFromEnv(NAME)
 const trace = process.env.TRACE === '1'
 
@@ -82,7 +93,7 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
         await ctx.reply(mention, formatEscrowRequired({
           round: award.round,
           reference,
-          seller: SELLER_WALLET,
+          seller: PAYOUT_WALLET,
           amountSol: quote.priceSol,
           deadlineSecs: ESCROW_DEADLINE_SECS,
           settlement: SETTLEMENT_MODE,
@@ -112,6 +123,14 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
           }
           awarded.delete(deposited.reference)
           if (trace) console.error(`[${NAME}] escrow funded via ${deposited.settlement ?? 'direct'} -> delivering round ${deposited.round}`)
+          const bond = await postSellerBond({
+            round: deposited.round,
+            sellerWallet: SELLER_WALLET,
+            holderWallet: BOND_HOLDER_WALLET,
+            amountSol: BOND_SOL,
+            maxSol: MAX_BOND_SOL,
+          })
+          if (bond) await ctx.reply(mention, formatBondPosted(bond))
           if (DELIVER_MODE === 'none') {
             // Rogue path: took the escrow, deliver nothing - the buyer must refund after the deadline.
             console.error(`[${NAME}] DELIVER_MODE=none - taking the escrow hostage (round ${deposited.round}); buyer must refund after the deadline`)

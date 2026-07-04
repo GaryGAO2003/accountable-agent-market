@@ -4,6 +4,10 @@ import {
   formatEscrowRequired, parseEscrowRequired, formatDeposited, parseDeposited,
   formatDelivered, parseDelivered, formatVerified, parseVerified,
   formatArbiterReview, parseArbiterReview, formatArbiterDecision, parseArbiterDecision,
+  formatChallengeReview, parseChallengeReview,
+  formatBondPosted, parseBondPosted, formatChallengeOpened, parseChallengeOpened,
+  formatChallengeDecision, parseChallengeDecision, formatSlash, parseSlash,
+  formatEgressAudit, parseEgressAudit, formatEgressDenied, parseEgressDenied,
   selectBids, pickCheapest, verb, messageRound,
   type Bid,
 } from './protocol.js'
@@ -98,6 +102,7 @@ describe('arbiter review round-trip', () => {
       reference: 'Ref111',
       seller: 'Seller111',
       payer: 'Buyer111',
+      challenger: 'Challenger111',
       raw: '{"service":"txline-edge","fixtureId":"123"}',
     }
     expect(parseArbiterReview(formatArbiterReview(review))).toEqual(review)
@@ -129,6 +134,60 @@ describe('arbiter review round-trip', () => {
   })
 })
 
+describe('L1 challenge and slash protocol', () => {
+  it('round-trips CHALLENGE_REVIEW and CHALLENGE_OPENED with challenger bond evidence', () => {
+    const review = {
+      round: 9,
+      service: 'txline',
+      arg: 'fixtures',
+      raw: '{"service":"txline-fixtures","count":3}',
+    }
+    expect(parseChallengeReview(formatChallengeReview(review))).toEqual(review)
+
+    const opened = {
+      round: 9,
+      by: 'challenger-agent',
+      reason: 'delivered count differs from re-exec',
+      challenger: 'Challenger111',
+      bondSig: 'BondSig111',
+    }
+    expect(parseChallengeOpened(formatChallengeOpened(opened))).toEqual(opened)
+  })
+
+  it('round-trips BOND_POSTED, CHALLENGE_UPHELD, and ARBITER_SLASHED', () => {
+    const bond = {
+      round: 9,
+      seller: 'Seller111',
+      holder: 'Arbiter111',
+      amountSol: 0.0001,
+      sig: 'SellerBondSig111',
+    }
+    expect(parseBondPosted(formatBondPosted(bond))).toEqual(bond)
+
+    const decision = {
+      round: 9,
+      upheld: true,
+      code: 'txline_count_mismatch',
+      reason: 'delivered count differs from re-exec',
+    }
+    expect(formatChallengeDecision(decision).startsWith('CHALLENGE_UPHELD')).toBe(true)
+    expect(parseChallengeDecision(formatChallengeDecision(decision))).toEqual(decision)
+
+    const slash = {
+      round: 9,
+      sig: 'SlashSig111',
+      amountSol: 0.0001,
+      from: 'Arbiter111',
+      to: 'Challenger111',
+      bond: 'seller' as const,
+      settlement: 'transfer' as const,
+      arbiter: true,
+    }
+    expect(formatSlash(slash).startsWith('ARBITER_SLASHED')).toBe(true)
+    expect(parseSlash(formatSlash(slash))).toEqual(slash)
+  })
+})
+
 describe('selection', () => {
   const bids: Bid[] = [
     { round: 7, priceSol: 0.0006, by: 'premium' },
@@ -143,6 +202,77 @@ describe('selection', () => {
   })
   it('pickCheapest picks the lowest price', () => {
     expect(pickCheapest(selectBids(bids, 7))?.by).toBe('cheap')
+  })
+})
+
+describe('EGRESS_DENIED round-trip', () => {
+  it('formats the frozen line and parses it back, detail runs to end of line', () => {
+    const msg = formatEgressDenied(9, 'BUDGET_EXCEEDED', 'deposit', 'cumulative 1000001 lamports would exceed budget 1000000')
+    expect(msg).toBe('EGRESS_DENIED round=9 code=BUDGET_EXCEEDED action=deposit detail=cumulative 1000001 lamports would exceed budget 1000000')
+    expect(parseEgressDenied(msg)).toEqual({
+      round: 9,
+      code: 'BUDGET_EXCEEDED',
+      action: 'deposit',
+      detail: 'cumulative 1000001 lamports would exceed budget 1000000',
+    })
+  })
+  it('carries the caller-emitted reserved codes (e.g. SCHEMA_INVALID) unchanged', () => {
+    const msg = formatEgressDenied(3, 'SCHEMA_INVALID', 'http', 'malformed DELIVERED payload')
+    expect(parseEgressDenied(msg)).toEqual({ round: 3, code: 'SCHEMA_INVALID', action: 'http', detail: 'malformed DELIVERED payload' })
+  })
+  it('parses an empty detail', () => {
+    expect(parseEgressDenied(formatEgressDenied(1, 'AMOUNT_INVALID', 'transfer', ''))).toEqual({
+      round: 1, code: 'AMOUNT_INVALID', action: 'transfer', detail: '',
+    })
+  })
+  it('returns null on a non-EGRESS_DENIED line', () => {
+    expect(parseEgressDenied('WANT round=7 service=x arg=y budget=0.001')).toBeNull()
+    expect(parseEgressDenied('nonsense')).toBeNull()
+  })
+})
+
+describe('EGRESS_AUDIT round-trip', () => {
+  it('formats and parses an ALLOW audit line for the live firewall console', () => {
+    const msg = formatEgressAudit({
+      round: 9,
+      seq: 1,
+      decision: 'ALLOW',
+      action: 'deposit',
+      detail: 'deposit 0.0003 SOL -> Seller111',
+    })
+    expect(msg).toBe('EGRESS_AUDIT round=9 seq=1 decision=ALLOW action=deposit detail=deposit 0.0003 SOL -> Seller111')
+    expect(parseEgressAudit(msg)).toEqual({
+      round: 9,
+      seq: 1,
+      decision: 'ALLOW',
+      action: 'deposit',
+      detail: 'deposit 0.0003 SOL -> Seller111',
+    })
+  })
+
+  it('formats and parses a DENY audit line with a reason code', () => {
+    const msg = formatEgressAudit({
+      round: 10,
+      seq: 2,
+      decision: 'DENY',
+      action: 'release',
+      code: 'RECIPIENT_NOT_ALLOWED',
+      detail: 'recipient Attacker111 is not an approved payout wallet',
+    })
+    expect(msg).toBe('EGRESS_AUDIT round=10 seq=2 decision=DENY action=release code=RECIPIENT_NOT_ALLOWED detail=recipient Attacker111 is not an approved payout wallet')
+    expect(parseEgressAudit(msg)).toEqual({
+      round: 10,
+      seq: 2,
+      decision: 'DENY',
+      action: 'release',
+      code: 'RECIPIENT_NOT_ALLOWED',
+      detail: 'recipient Attacker111 is not an approved payout wallet',
+    })
+  })
+
+  it('rejects malformed audit lines', () => {
+    expect(parseEgressAudit('EGRESS_AUDIT round=1 seq=2 action=deposit detail=x')).toBeNull()
+    expect(parseEgressAudit('EGRESS_DENIED round=1 code=AMOUNT_INVALID action=deposit detail=x')).toBeNull()
   })
 })
 

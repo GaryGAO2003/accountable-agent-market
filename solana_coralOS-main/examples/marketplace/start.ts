@@ -55,11 +55,23 @@ async function main() {
   const trace = env.TRACE ?? ''
   const arbiterAgentEnabled = env.ARBITER_AGENT_ENABLED === '1'
   const arbiterAgentName = env.ARBITER_AGENT_NAME ?? 'arbiter-agent'
+  const challengerAgentEnabled = env.CHALLENGER_AGENT_ENABLED === '1'
+  const challengerAgentName = env.CHALLENGER_AGENT_NAME ?? 'challenger-agent'
+  const arbiterProgramId = env.ARBITER_PROGRAM_ID ?? ''
+  const bondSol = Number(env.SELLER_BOND_SOL ?? '0.0001')
+  const challengerBondSol = Number(env.CHALLENGER_BOND_SOL ?? '0.0001')
+  const bondHolderWallet = env.BOND_HOLDER_WALLET ?? env.ARBITER_WALLET ?? ''
   if (arbiterAgentEnabled && !env.ARBITER_KEYPAIR_B58) {
     throw new Error('ARBITER_AGENT_ENABLED=1 requires ARBITER_KEYPAIR_B58 in .env')
   }
   if (arbiterAgentEnabled && env.SETTLEMENT_MODE === 'direct') {
     throw new Error('ARBITER_AGENT_ENABLED=1 requires arbiter settlement; unset SETTLEMENT_MODE=direct')
+  }
+  if (challengerAgentEnabled && !env.CHALLENGER_KEYPAIR_B58) {
+    throw new Error('CHALLENGER_AGENT_ENABLED=1 requires CHALLENGER_KEYPAIR_B58 in .env')
+  }
+  if (challengerAgentEnabled && challengerBondSol > 0 && !bondHolderWallet) {
+    throw new Error('CHALLENGER_AGENT_ENABLED=1 with CHALLENGER_BOND_SOL > 0 requires BOND_HOLDER_WALLET or ARBITER_WALLET')
   }
 
   // LLM provider — the kit uses Venice AI; flip the whole market with LLM_PROVIDER in .env (see LLM.md).
@@ -103,20 +115,30 @@ async function main() {
   const demoFailVerification = env.DEMO_FAIL_VERIFICATION === '1'
   const failingSeller = env.DEMO_FAILING_SELLER ?? 'seller-cheap'
   const failureMode = env.TXLINE_DELIVERY_MODE ?? 'bad_count'
+  const sellers = (env.MARKET_SELLERS ?? 'seller-cheap,seller-honest,seller-premium,seller-rogue,seller-hijack')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const supportsTxlineDeliveryMode = (name: string) => name !== 'seller-rogue'
   const seller = (name: string) =>
     agent(name, {
       SELLER_WALLET: str(wallet), SOLANA_RPC_URL: str(rpc), AGENT_NAME: str(name),
       SERVICES: str('txline'), TXLINE_API_KEY: str(txlineKey),
-      ...(demoFailVerification && name === failingSeller ? { TXLINE_DELIVERY_MODE: str(failureMode) } : {}),
+      ...(env.SELLER_KEYPAIR_B58 ? { SELLER_KEYPAIR_B58: str(env.SELLER_KEYPAIR_B58) } : {}),
+      ...(bondHolderWallet ? { BOND_HOLDER_WALLET: str(bondHolderWallet) } : {}),
+      SELLER_BOND_SOL: f64(bondSol),
+      ...(demoFailVerification && name === failingSeller && supportsTxlineDeliveryMode(name) ? { TXLINE_DELIVERY_MODE: str(failureMode) } : {}),
       // The deployed devnet arbiter program has a first-come global config (its arbiter key is already
       // taken), so forked kits can't arbiter-settle — SETTLEMENT_MODE=direct flips to the base escrow.
       ...(env.SETTLEMENT_MODE ? { SETTLEMENT_MODE: str(env.SETTLEMENT_MODE) } : {}),
       ...(env.TXLINE_BASE_URL ? { TXLINE_BASE_URL: str(env.TXLINE_BASE_URL) } : {}),
+      ...(name === 'seller-hijack' && env.TERMS_HIJACK_WALLET ? { TERMS_HIJACK_WALLET: str(env.TERMS_HIJACK_WALLET) } : {}),
       ...llmOpts,
     })
 
   // seller-rogue is the accountability persona: wins low, never delivers, so the buyer refunds after the deadline.
-  const sellers = ['seller-cheap', 'seller-honest', 'seller-premium', 'seller-rogue']
+  // seller-hijack is the egress-PEP persona: undercuts to win, then names a hijacked payout wallet in its escrow
+  // terms - the buyer's PEP pins the expected payout and refuses to deposit (RECIPIENT_NOT_ALLOWED, no SOL moves).
 
   // Optional broker swarm (ENABLE_BROKER=1, see coral-agents/broker/README.md): the buyer buys from a
   // broker, which resells from the real sellers. Needs a funded broker wallet + seller receive wallets —
@@ -149,28 +171,55 @@ async function main() {
     BUYER_KEYPAIR_B58: str(keypair),
     // Arbiter settlement is the default path — the buyer crashes at startup without the arbiter key.
     ...(env.ARBITER_KEYPAIR_B58 ? { ARBITER_KEYPAIR_B58: str(env.ARBITER_KEYPAIR_B58) } : {}),
+    ...(arbiterProgramId ? { ARBITER_PROGRAM_ID: str(arbiterProgramId) } : {}),
     AGENT_NAME: str('buyer-agent'),
     SOLANA_RPC_URL: str(rpc),
-    // F3: the expected seller payout wallet — the buyer binds the escrow seller= to it (broker if enabled).
-    SELLER_WALLET: str(buyerExpectedWallet),
+    // F3 / egress PEP: the expected seller payout wallet — the buyer binds it as the sole allowed recipient
+    // (the broker wallet if the broker is enabled, else the shared receive wallet). A hijacked terms wallet
+    // (e.g. seller-hijack) then trips RECIPIENT_NOT_ALLOWED before any deposit.
+    EXPECTED_SELLER_WALLET: str(buyerExpectedWallet),
     BUYER_MAX_SOL: f64(Number(env.BUYER_MAX_SOL ?? '0.001')),
+    // Egress PEP caps (optional overrides): velocity (money actions/min) + cumulative session budget in SOL.
+    ...(env.BUYER_MAX_TX_PER_MIN ? { BUYER_MAX_TX_PER_MIN: f64(Number(env.BUYER_MAX_TX_PER_MIN)) } : {}),
+    ...(env.BUYER_SESSION_BUDGET_SOL ? { BUYER_SESSION_BUDGET_SOL: f64(Number(env.BUYER_SESSION_BUDGET_SOL)) } : {}),
     BUYER_SERVICE: str(buyerService),
     BUYER_ARG: str(buyerArg),
     ...(buyerArgs ? { BUYER_ARGS: str(buyerArgs) } : {}),
     // The buyer re-executes the objective TxLINE read to verify deliveries - it needs the token too.
     TXLINE_API_KEY: str(txlineKey),
     ...(env.TXLINE_BASE_URL ? { TXLINE_BASE_URL: str(env.TXLINE_BASE_URL) } : {}),
+    ...(env.CHALLENGE_WINDOW_MS ? { CHALLENGE_WINDOW_MS: str(env.CHALLENGE_WINDOW_MS) } : {}),
+    ...(env.AUTO_CHALLENGE_ON_FAILED_VERIFY ? { AUTO_CHALLENGE_ON_FAILED_VERIFY: str(env.AUTO_CHALLENGE_ON_FAILED_VERIFY) } : {}),
+    SELLER_BOND_SOL: f64(bondSol),
     MARKET_SELLERS: str(buyerSellers.join(',')),
     ...(arbiterAgentEnabled ? { ARBITER_AGENT_ENABLED: str('1'), ARBITER_AGENT_NAME: str(arbiterAgentName) } : {}),
+    ...(challengerAgentEnabled ? { CHALLENGER_AGENT_ENABLED: str('1'), CHALLENGER_AGENT_NAME: str(challengerAgentName) } : {}),
     ...llmOpts,
   }
+
+  const challengerAgents = challengerAgentEnabled
+    ? [agent(challengerAgentName, {
+        CHALLENGER_KEYPAIR_B58: str(env.CHALLENGER_KEYPAIR_B58 ?? ''),
+        AGENT_NAME: str(challengerAgentName),
+        SOLANA_RPC_URL: str(rpc),
+        TXLINE_API_KEY: str(txlineKey),
+        ...(bondHolderWallet ? { BOND_HOLDER_WALLET: str(bondHolderWallet) } : {}),
+        CHALLENGER_BOND_SOL: f64(challengerBondSol),
+        ...(env.MAX_CHALLENGER_BOND_SOL ? { MAX_CHALLENGER_BOND_SOL: f64(Number(env.MAX_CHALLENGER_BOND_SOL)) } : {}),
+        ...(env.TXLINE_BASE_URL ? { TXLINE_BASE_URL: str(env.TXLINE_BASE_URL) } : {}),
+        ...(trace ? { TRACE: str(trace) } : {}),
+      })]
+    : []
 
   const arbiterAgents = arbiterAgentEnabled
     ? [agent(arbiterAgentName, {
         ARBITER_KEYPAIR_B58: str(env.ARBITER_KEYPAIR_B58 ?? ''),
+        ...(arbiterProgramId ? { ARBITER_PROGRAM_ID: str(arbiterProgramId) } : {}),
         AGENT_NAME: str(arbiterAgentName),
         SOLANA_RPC_URL: str(rpc),
         TXLINE_API_KEY: str(txlineKey),
+        SELLER_BOND_SOL: f64(bondSol),
+        CHALLENGER_BOND_SOL: f64(challengerBondSol),
         ...(env.TXLINE_BASE_URL ? { TXLINE_BASE_URL: str(env.TXLINE_BASE_URL) } : {}),
         ...(env.ARBITER_REFUND_ON_REJECT ? { ARBITER_REFUND_ON_REJECT: str(env.ARBITER_REFUND_ON_REJECT) } : {}),
         ...(trace ? { TRACE: str(trace) } : {}),
@@ -188,6 +237,7 @@ async function main() {
           agent('buyer-agent', buyerOpts),
           ...(demoFailVerification ? [seller(failingSeller)] : sellers.map((name) => seller(name))),
           ...brokerAgents,
+          ...challengerAgents,
           ...arbiterAgents,
         ],
       },
@@ -198,13 +248,16 @@ async function main() {
   if (!sres.ok) throw new Error(`session create failed: ${sres.status} ${await sres.text()}`)
   const { sessionId } = await sres.json() as { sessionId: string }
 
+  const reviewers = [
+    ...(challengerAgentEnabled ? [challengerAgentName] : []),
+    ...(arbiterAgentEnabled ? [arbiterAgentName] : []),
+  ]
+  const reviewerSuffix = reviewers.length ? ` + ${reviewers.join(' + ')}` : ''
   const lineup = brokerReady
     ? `broker (reselling ${sellers.join(', ')})`
     : demoFailVerification
-      ? `${failingSeller} (scripted ${failureMode} verification failure)`
-      : arbiterAgentEnabled
-        ? `${sellers.join(', ')} + ${arbiterAgentName}`
-        : sellers.join(', ')
+      ? `${failingSeller} (scripted ${failureMode} verification failure)${reviewerSuffix}`
+      : `${sellers.join(', ')}${reviewerSuffix}`
   console.log(`\n✅ Market session ${sessionId} — buyer + ${lineup}.`)
   console.log(`   receive wallet: ${wallet}`)
   console.log('   The buyer broadcasts a WANT; sellers bid; the winner settles via escrow.\n')

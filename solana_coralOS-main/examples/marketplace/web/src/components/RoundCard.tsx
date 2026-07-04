@@ -7,6 +7,7 @@ import { WorldCupPanel } from './WorldCupPanel'
 /** One auction round: the need, the competing bids, the award + reasoning, and on-chain settlement. */
 export function RoundCard({ round }: { round: Round }) {
   const winner = round.award?.to
+  const latestAudit = round.egressAudits?.at(-1)
   return (
     <article className="round" data-testid="round" data-round={round.round}>
       <header className="round-head">
@@ -47,12 +48,43 @@ export function RoundCard({ round }: { round: Round }) {
         </p>
       )}
 
+      {latestAudit && (
+        <p className={`round-audit round-audit-${latestAudit.decision.toLowerCase()}`} data-testid="round-audit">
+          PEP {latestAudit.decision}: {latestAudit.action}
+          {latestAudit.code ? ` · ${latestAudit.code}` : ''}
+        </p>
+      )}
+
+      {(round.bond || round.challenge || round.challengeDecision || round.slash) && (
+        <div className="accountability" data-testid="accountability">
+          {round.bond && <span>bond {round.bond.amountSol} SOL posted</span>}
+          {round.challenge && <span>challenge by {round.challenge.by}: {round.challenge.reason}</span>}
+          {round.challengeDecision && (
+            <span>{round.challengeDecision.upheld ? 'challenge upheld' : 'challenge rejected'}: {round.challengeDecision.reason}</span>
+          )}
+          {round.slash && <span>{round.slash.bond ?? 'seller'} bond slashed{round.slash.amountSol ? ` (${round.slash.amountSol} SOL)` : ''}</span>}
+        </div>
+      )}
+
       <footer className="settle-row">
-        {round.deposit && <SettlementBadge label={`deposit ${round.escrow?.amountSol ?? ''} SOL`} sig={round.deposit.sig} />}
-        {round.release && <SettlementBadge label="release" sig={round.release.sig} />}
-        {round.refund?.sig
-          ? <SettlementBadge label="refund" sig={round.refund.sig} className="settle-refund" />
-          : round.refunded && <span className="settle settle-refund" data-testid="refund">refunded</span>}
+        {round.status === 'blocked' || round.egress ? (
+          // Our PEP stopped this round before any tx — no signature, no Explorer link, no funds moved.
+          <div className="blocked-badge" data-testid="blocked">
+            <span className="blocked-tag">🛡 PEP blocked</span>
+            {round.egress?.code && <code className="blocked-code">{round.egress.code}</code>}
+            <span className="blocked-note">blocked before deposit — no funds moved</span>
+          </div>
+        ) : (
+          <>
+            {round.deposit && <SettlementBadge label={`deposit ${round.escrow?.amountSol ?? ''} SOL`} sig={round.deposit.sig} />}
+            {round.bond && <SettlementBadge label="bond" sig={round.bond.sig} />}
+            {round.release && <SettlementBadge label="release" sig={round.release.sig} />}
+            {round.refund?.sig
+              ? <SettlementBadge label="refund" sig={round.refund.sig} className="settle-refund" />
+              : round.refunded && <span className="settle settle-refund" data-testid="refund">refunded</span>}
+            {round.slash && <SettlementBadge label="slash" sig={round.slash.sig} className="settle-slash" />}
+          </>
+        )}
       </footer>
     </article>
   )

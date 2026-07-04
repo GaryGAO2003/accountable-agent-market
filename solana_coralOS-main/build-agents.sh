@@ -6,6 +6,7 @@
 # Usage: bash build-agents.sh           (build all)
 #        bash build-agents.sh seller    (seller-agent only)
 #        bash build-agents.sh buyer     (buyer-agent only)
+#        bash build-agents.sh challenger (challenger-agent only)
 #        bash build-agents.sh arbiter   (arbiter-agent only)
 
 set -e
@@ -23,6 +24,12 @@ build_buyer() {
   echo "    buyer-agent:0.1.0 done"
 }
 
+build_challenger() {
+  echo "==> Building challenger-agent:0.1.0"
+  docker build -f "$ROOT/coral-agents/challenger-agent/Dockerfile" -t challenger-agent:0.1.0 "$ROOT"
+  echo "    challenger-agent:0.1.0 done"
+}
+
 build_arbiter() {
   echo "==> Building arbiter-agent:0.1.0"
   docker build -f "$ROOT/coral-agents/arbiter-agent/Dockerfile" -t arbiter-agent:0.1.0 "$ROOT"
@@ -32,15 +39,17 @@ build_arbiter() {
 case "${1:-all}" in
   seller) build_seller ;;
   buyer)  build_buyer ;;
+  challenger) build_challenger ;;
   arbiter) build_arbiter ;;
   all)
     build_seller
     build_buyer
+    build_challenger
     build_arbiter
     echo ""
     echo "Agent images built. Run a CoralOS round:"
     echo "  docker compose up -d coral"
     echo "  cd examples/txodds && npm run coral"
     ;;
-  *) echo "Usage: bash build-agents.sh [seller|buyer|arbiter|all]"; exit 1 ;;
+  *) echo "Usage: bash build-agents.sh [seller|buyer|challenger|arbiter|all]"; exit 1 ;;
 esac

@@ -6,7 +6,9 @@
  */
 import {
   verb, messageRound, parseWant, parseBid, parseAward, parseEscrowRequired, parseDeposited,
-  parseDelivered, parseVerified, parseArbiterDecision,
+  parseDelivered, parseVerified, parseArbiterDecision, parseBondPosted, parseChallengeOpened,
+  parseChallengeDecision, parseSlash, parseEgressDenied,
+  parseEgressAudit,
 } from '@pay/agent-runtime'
 
 export interface RawMessage {
@@ -20,7 +22,16 @@ export interface RoundBid {
   note?: string
 }
 
-export type RoundStatus = 'bidding' | 'awarded' | 'deposited' | 'delivered' | 'verified' | 'verification_failed' | 'settled' | 'refunded'
+export interface RoundEgressAudit {
+  seq: number
+  decision: 'ALLOW' | 'DENY'
+  action: string
+  code?: string
+  detail: string
+  by?: string
+}
+
+export type RoundStatus = 'bidding' | 'awarded' | 'deposited' | 'delivered' | 'verified' | 'challenged' | 'rejected' | 'verification_failed' | 'settled' | 'refunded' | 'slashed' | 'blocked'
 
 export interface Round {
   round: number
@@ -31,11 +42,19 @@ export interface Round {
   award?: { to: string; reason?: string }
   escrow?: { reference: string; seller: string; amountSol: number; deadlineSecs: number }
   deposit?: { sig: string; buyer: string }
+  bond?: { seller: string; holder: string; amountSol: number; sig: string }
   delivered?: { raw: string; data?: unknown }
   verification?: { ok: boolean; code: string; reason: string }
+  challenge?: { by: string; reason: string; challenger?: string; bondSig?: string }
+  challengeDecision?: { upheld: boolean; code: string; reason: string }
   release?: { sig: string }
   refunded?: boolean
   refund?: { sig: string }
+  slash?: { sig: string; amountSol?: number; from?: string; to?: string; bond?: 'seller' | 'challenger' }
+  /** An egress PEP refused an action for this round — no on-chain tx happened, so no sig/link exists. Terminal. */
+  egress?: { code: string; action: string; by?: string }
+  /** Every PEP verdict the buyer streamed into the thread, including ALLOWs that later produced txs. */
+  egressAudits?: RoundEgressAudit[]
   status: RoundStatus
 }
 
@@ -81,14 +100,17 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
     if (esc) { get(esc.round).escrow = { reference: esc.reference, seller: esc.seller, amountSol: esc.amountSol, deadlineSecs: esc.deadlineSecs }; continue }
 
     const dep = parseDeposited(text)
-    if (dep) { const r = get(dep.round); r.deposit = { sig: dep.sig, buyer: dep.buyer }; if (r.status !== 'settled') r.status = 'deposited'; continue }
+    if (dep) { const r = get(dep.round); r.deposit = { sig: dep.sig, buyer: dep.buyer }; if (r.status !== 'settled' && r.status !== 'blocked') r.status = 'deposited'; continue }
+
+    const bond = parseBondPosted(text)
+    if (bond) { get(bond.round).bond = { seller: bond.seller, holder: bond.holder, amountSol: bond.amountSol, sig: bond.sig }; continue }
 
     const delivered = parseDelivered(text)
     if (delivered) {
       const round = get(delivered.round)
       const raw = delivered.raw
       round.delivered = { raw, data: tryJson(raw) }
-      if (round.status !== 'settled') round.status = 'delivered'
+      if (round.status !== 'settled' && round.status !== 'blocked') round.status = 'delivered'
       continue
     }
 
@@ -96,7 +118,7 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
     if (verified) {
       const round = get(verified.round)
       round.verification = { ok: verified.ok, code: verified.code, reason: verified.reason }
-      if (round.status !== 'settled') round.status = verified.ok ? 'verified' : 'verification_failed'
+      if (round.status !== 'settled' && round.status !== 'blocked') round.status = verified.ok ? 'verified' : 'verification_failed'
       continue
     }
 
@@ -104,7 +126,67 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
     if (arbiterDecision) {
       const round = get(arbiterDecision.round)
       round.verification = { ok: arbiterDecision.ok, code: arbiterDecision.code, reason: arbiterDecision.reason }
-      if (round.status !== 'settled') round.status = arbiterDecision.ok ? 'verified' : 'verification_failed'
+      if (round.status !== 'settled' && round.status !== 'blocked') round.status = arbiterDecision.ok ? 'verified' : 'rejected'
+      continue
+    }
+
+    const challenge = parseChallengeOpened(text)
+    if (challenge) {
+      const round = get(challenge.round)
+      round.challenge = {
+        by: challenge.by,
+        reason: challenge.reason,
+        ...(challenge.challenger ? { challenger: challenge.challenger } : {}),
+        ...(challenge.bondSig ? { bondSig: challenge.bondSig } : {}),
+      }
+      if (round.status !== 'settled' && round.status !== 'blocked') round.status = 'challenged'
+      continue
+    }
+
+    const challengeDecision = parseChallengeDecision(text)
+    if (challengeDecision) {
+      const round = get(challengeDecision.round)
+      round.challengeDecision = { upheld: challengeDecision.upheld, code: challengeDecision.code, reason: challengeDecision.reason }
+      if (round.status !== 'settled' && round.status !== 'blocked') round.status = challengeDecision.upheld ? 'rejected' : 'verified'
+      continue
+    }
+
+    const slash = parseSlash(text)
+    if (slash) {
+      const round = get(slash.round)
+      round.slash = {
+        sig: slash.sig,
+        ...(slash.amountSol == null ? {} : { amountSol: slash.amountSol }),
+        ...(slash.from ? { from: slash.from } : {}),
+        ...(slash.to ? { to: slash.to } : {}),
+        ...(slash.bond ? { bond: slash.bond } : {}),
+      }
+      if (round.status !== 'blocked') round.status = 'slashed'
+      continue
+    }
+
+    const audit = parseEgressAudit(text)
+    if (audit) {
+      const round = get(audit.round)
+      round.egressAudits = round.egressAudits ?? []
+      round.egressAudits.push({
+        seq: audit.seq,
+        decision: audit.decision,
+        action: audit.action,
+        ...(audit.code ? { code: audit.code } : {}),
+        detail: audit.detail,
+        by: m.sender,
+      })
+      continue
+    }
+
+    // Egress PEP refusal (frozen wire line): the buyer's code-enforced fence stopped an action before
+    // it left the agent. No on-chain tx happened, so 'blocked' is terminal — later verbs can't settle it.
+    const egress = parseEgressDenied(text)
+    if (egress) {
+      const round = get(egress.round)
+      round.egress = { code: egress.code, action: egress.action, by: m.sender }
+      round.status = 'blocked'
       continue
     }
 
@@ -112,15 +194,19 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
     const r = messageRound(text)
     if ((v === 'RELEASED' || v === 'ARBITER_RELEASED') && r != null) {
       const round = get(r)
-      const sig = text.match(/sig=(\S+)/)?.[1]
-      if (sig) round.release = { sig }
-      round.status = 'settled'
+      if (round.status !== 'blocked') { // a blocked round never settles on-chain
+        const sig = text.match(/sig=(\S+)/)?.[1]
+        if (sig) round.release = { sig }
+        round.status = 'settled'
+      }
     } else if ((v === 'REFUNDED' || v === 'ARBITER_REFUNDED') && r != null) {
       const round = get(r)
-      const sig = text.match(/sig=(\S+)/)?.[1]
-      if (sig) round.refund = { sig }
-      round.refunded = true
-      round.status = 'refunded'
+      if (round.status !== 'blocked') {
+        const sig = text.match(/sig=(\S+)/)?.[1]
+        if (sig) round.refund = { sig }
+        round.refunded = true
+        round.status = 'refunded'
+      }
     }
   }
 

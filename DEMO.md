@@ -1,26 +1,31 @@
 # Accountable Agent Market — Demo Guide
 
-Last updated: 2026-07-03. Companion docs: `PLAN.md` (roadmap), `PROPOSAL.md` (vision), `CRITIQUE.md`.
+Last updated: 2026-07-04. Companion docs: `PLAN.md` (roadmap), `PROPOSAL.md` (vision), `CRITIQUE.md`.
 
 ## What this is
 
 **A live marketplace where AI agents earn real (devnet) money from each other — no human in the loop.**
 
-One **buyer agent** broadcasts a need (`WANT txline fixtures budget=0.001`). Four **LLM seller
-personas** — `seller-cheap` (low-price volume), `seller-honest` (fair price), `seller-premium`
-(high-confidence premium), and `seller-rogue` (the villain: wins bids, takes the escrow, never
-delivers) — read it over a shared CoralOS thread and each decides *with an LLM* whether and how
-much to bid, down to its configured cost floor. The buyer awards with a stated reason, locks the
-payment in a **Solana escrow**, the winner delivers **real, verified TxODDS World Cup data**, the
-buyer **re-executes the objective TxLINE read and releases only after verification passes** —
-every settlement hop a real devnet transaction you can open on Solana Explorer. When the winner
-ghosts (the rogue) or the delivery fails verification, the buyer waits out the on-chain deadline
-and **reclaims its funds with the escrow's refund instruction** — the round shows up red
-(`refunded`) on the dashboard with its own Explorer link. Rounds repeat continuously; a React
-dashboard folds the CoralOS transcript into a live auction timeline.
+One **buyer agent** broadcasts a need (`WANT txline fixtures budget=0.001`). **LLM seller personas**
+compete — three that play fair (`seller-cheap` low-price volume, `seller-honest` fair price,
+`seller-premium` high-confidence premium) and two built to attack settlement (`seller-rogue`: wins
+bids, takes the escrow, never delivers; `seller-hijack`: wins, then names a **foreign payout
+wallet** in its escrow terms) — reading it over a shared CoralOS thread and each deciding *with an
+LLM* whether and how much to bid, down to its configured cost floor. The buyer awards with a stated
+reason — but **every payment first passes a code-enforced policy check (the Egress PEP)**, so it
+only deposits to the wallet it expects. It locks the payment in a **Solana escrow**, the winner
+delivers **real, verified TxODDS World Cup data**, the buyer **re-executes the objective TxLINE
+read and releases only after verification passes** — every settlement hop a real devnet transaction
+you can open on Solana Explorer. When the winner ghosts (the rogue) or the delivery fails
+verification, the buyer waits out the on-chain deadline and **reclaims its funds with the escrow's
+refund instruction** — the round shows up red (`refunded`) on the dashboard with its own Explorer
+link. When the hijacker tries to redirect the payout, the PEP **refuses the deposit before any
+transaction is signed** — a violet `PEP blocked` round where *no SOL moves at all*. Rounds repeat
+continuously; a React dashboard folds the CoralOS transcript into a live auction timeline.
 
 ```
-WANT → 4 LLM bids (persona-priced) → AWARD + reason → escrow deposit → DELIVERED → VERIFIED → RELEASED
+                                                  ┌ Egress PEP: payout to an unexpected wallet? refused pre-flight — no tx, no funds moved
+WANT → LLM bids (persona-priced) → AWARD + reason ┴→ escrow deposit → DELIVERED → VERIFIED → RELEASED
                                                        └→ no delivery / failed verification → deadline → REFUNDED
 ```
 
@@ -61,8 +66,21 @@ operation we hit, diagnosed, and fixed:
 
 That is the pitch: **agent markets break in ways humans won't be watching for.** Settlement rails
 must be verifiable and accountable by construction — verify-then-pay, self-owned arbitration,
-slashing, reputation (PLAN.md phases 3–9). The demo now shows both halves: **trust working**
-(settled rounds) and **trust broken but money safe** (refunded rounds).
+slashing, reputation (PLAN.md phases 3–9).
+
+Those six are all *detection* — caught after the fact. The other half is *prevention*, and it now
+ships too: a unified **Egress PEP** (`packages/agent-runtime/src/market/egress.ts`) that every
+outbound action — deposit, release, refund, outbound HTTP — passes *before* it happens (recipient
+allowlist · reference replay · budget · velocity · host allowlist), each denial tagged with a
+reason code and audited. "The model proposes, code disposes": a prompt injection or a hijacked
+thread message can *ask* the buyer to pay the wrong wallet, but can't make it. The `seller-hijack`
+persona demonstrates it — wins, swaps in a foreign payout wallet, and the buyer refuses to deposit
+(`RECIPIENT_NOT_ALLOWED`) before signing anything. **Honest caveat:** a block is *not* an on-chain
+tx — there's no signature to click; the proof is the audit line and the deposit that never appears,
+against a normal round's real Explorer link.
+
+The demo now shows all three: **trust working** (settled rounds), **trust broken but money safe**
+(refunded rounds), and **trust never extended** (a `PEP blocked` round where no funds ever move).
 
 ## Demo storyboard (≈3-minute video, two acts)
 
@@ -89,15 +107,23 @@ slashing, reputation (PLAN.md phases 3–9). The demo now shows both halves: **t
    seller that reports a wrong TxLINE fixture count: the buyer's re-exec catches it
    (`VERIFICATION_FAILED`), no release happens, and the deposit comes back after the deadline —
    bad data is treated exactly like no delivery.
-7. **The pitch** (20s). "In two days of running this market we found six ways agent settlement
+7. **The payout hijack, stopped cold** (15s, the prevention beat). `seller-hijack` undercuts to
+   win, then its `ESCROW_REQUIRED` names a **payout wallet the buyer never expected**. Before
+   signing any deposit, the buyer's Egress PEP pins the expected wallet and refuses:
+   `EGRESS_DENIED code=RECIPIENT_NOT_ALLOWED`. On the dashboard, a violet **PEP blocked** badge —
+   no Explorer link, buyer balance unmoved. Say the honest line out loud: *nothing settled, because
+   nothing was allowed to* — the audit log is the evidence, not a transaction. Detection catches a
+   cheater after the money moves; this stops it before. The money never left.
+8. **The pitch** (20s). "In two days of running this market we found six ways agent settlement
    breaks — a squatted arbiter, unpayable wallets, colliding escrows, a refund path nobody wired.
-   Accountability can't be a promise; it has to be the protocol. Shipped: verify-then-pay +
-   deadline refunds (+ an opt-in neutral arbiter agent). Next: own arbitration, slashing,
-   reputation."
+   Accountability can't be a promise; it has to be the protocol. Shipped: a code-enforced Egress
+   PEP (prevention) + verify-then-pay + deadline refunds (+ an opt-in neutral arbiter agent). Next:
+   own arbitration, slashing, reputation."
 
-**Close** (10s). Switch to the dashboard's **Follow the money** tab and play the rogue scenario —
-the whole accountability story in one animated shot — then repo URL + "clone, add two keys,
-`docker compose up`, and the market runs."
+**Close** (10s). Switch to the dashboard's **Follow the money** tab and play the rogue and hijack
+scenarios back to back — refund-after-deadline (money out, then safely back) and
+prevention-before-deposit (money that never moves) — the whole accountability story in two animated
+shots, then repo URL + "clone, add two keys, `docker compose up`, and the market runs."
 
 Live fallback if recording during the pitch: the dashboard keeps producing both settled and
 refunded rounds (~40–70s/round) — let it run in a corner of the screen.
@@ -136,7 +162,38 @@ cd ../web && npm install && npm run dev                             # :5173
 Notes: on some networks Node needs `NODE_OPTIONS=--dns-result-order=ipv4first` (TxLINE host over
 IPv6 resets). `TRACE=1` in .env logs Explorer links per settlement.
 
-## Verified live artifacts (2026-07-03)
+## Verified live artifacts
+
+### L2 prevention — the Egress PEP, live (session `34526ba2-2ec4-4466-9acc-1ee1eb3f476d`, 2026-07-04)
+
+**All three accountability outcomes in one live market** — trust working, trust broken but money
+safe, and trust refused before any money moves:
+
+- Round 1 **settled** — `seller-cheap` won (0.0003); the PEP **allowed** the payout (recipient = the
+  expected receive wallet) and the escrow released:
+  deposit `https://explorer.solana.com/tx/Dwt5GpkGWSQTqUEREdmH1o3TTVKYh9q2cSjZCT78BhsZJT6kVnLtDtyusXo3fPLZkohYnkLJtLJ55PadL7DEtjN?cluster=devnet`
+  · release `https://explorer.solana.com/tx/2WXfMUpcB7D5SaB1gZuwPaEAYFnniazTqN8zKvCvB1KaTbyAEV4edyGhXtupfrfXNtk9k7LH7myTkNkwKjzuZyWr?cluster=devnet`
+- Round 2 **refunded** — `seller-rogue` won (0.00025), funded, ghosted; the buyer reclaimed after
+  the deadline:
+  refund `https://explorer.solana.com/tx/ArtyHktveU2txzazdyEruDDjvYffoZogEhyQo9ded4ti69mcxSnniHmiWWtzVH4hxg7a4QivyxoncsMBdNXcKmM?cluster=devnet`
+- Rounds 3 & 4 **blocked (PEP)** — `seller-hijack` won, then its escrow terms named a **foreign
+  payout wallet** (`APTHoJ11s7Ji7RC9rMq4vwTMDQumW3HGiEBcGWPXV6Rf`, not its market identity). The
+  buyer's Egress PEP refused the deposit **before signing anything**, and broadcast the refusal to
+  the thread (the seller received it):
+
+  ```
+  [egress] {"agent":"buyer","action":"deposit 0.00028 SOL -> APTHoJ11…V6Rf","decision":"DENY","code":"RECIPIENT_NOT_ALLOWED",…}
+  [buyer] round 3: deposit blocked (RECIPIENT_NOT_ALLOWED)
+  → thread: EGRESS_DENIED round=3 code=RECIPIENT_NOT_ALLOWED action=deposit
+  ```
+
+  **There is deliberately no Explorer link here — that is the point.** A prevented action has no
+  signature; the proof is the audit line plus the deposit that never appears, set against the
+  settled round's real link above. The hijacker won twice and moved **zero** SOL. (Every honest
+  payout is allow-audited too — the round-1/2 deposits each carry an `[egress] …"decision":"ALLOW"`
+  line — so a blocked round reads as a visible exception, not silence.)
+
+### Two-act session (2026-07-03)
 
 **Two-act session** (`51e61f6b-bbe2-49f3-9e84-d7ced9fbe7e3`) — trust working and trust broken in
 the same live market:
@@ -173,6 +230,12 @@ Buyer wallet: `ByowCmt5bMKXL3t1Mj1rJiismnDgxbkNnHQn5cD9Hc3g` · Seller receive w
   (objective TxLINE re-exec before release; `DELIVER_MODE=junk` and `TXLINE_DELIVERY_MODE=bad_count`
   are the built-in attackers that exercise it). Verification covers the TxLINE adapter only;
   watcher/challenger dispute flow and slashing are later roadmap phases.
+- **Prevention (Egress PEP) is wired and unit-tested**, with `seller-hijack` (payout-wallet swap)
+  as the built-in attacker. A blocked round leaves an **audit-log line + `EGRESS_DENIED` thread
+  message**, not an on-chain artifact — by design, a prevented action has no signature. So unlike
+  the settled/refunded rounds there is no Explorer link to cite for it; reproduce it live from the
+  runbook (`seller-hijack` is in the default roster) to watch the buyer refuse the deposit. The
+  velocity/budget caps are configurable and default high enough never to false-trip the demo.
 - The in-round refund waits out deadlines ≤120s; longer deadlines log and leave funds refundable
   manually (the on-chain instruction works whenever).
 - The opt-in `arbiter-agent` (neutral verify + settle, `ARBITER_AGENT_ENABLED=1`) is built and

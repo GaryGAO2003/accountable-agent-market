@@ -8,17 +8,21 @@
 
 ## 它做什么（2026-07-03 已在 devnet 真实跑通）
 
-一个**买家 agent** 在 CoralOS 共享消息线程里广播需求；四个 **LLM 卖家 persona**——低价走量的
-`seller-cheap`、公道可靠的 `seller-honest`、高价高信心的 `seller-premium`，以及**反派**
-`seller-rogue`（中标、收下托管、然后玩消失）——各自用 LLM 决定"接不接、报多少"（不低于各自
-成本底价）。买家给出理由授标，把货款锁进 **Solana 托管合约**，中标者交付**真实的 TxODDS
-世界杯数据**，托管在交付后自动放款。若中标的是 rogue、到期没有交付，买家等过链上 deadline 后
-**用托管合约的 refund 指令单方面收回资金**——该轮在面板上变红（refunded），带自己的 Explorer
-链接。每一步都是 devnet 上可查证的真实交易；React 面板把消息流实时折叠成拍卖时间线。
+一个**买家 agent** 在 CoralOS 共享消息线程里广播需求；**LLM 卖家 persona** 相互竞争——三个守规矩的
+（低价走量的 `seller-cheap`、公道可靠的 `seller-honest`、高价高信心的 `seller-premium`），外加两个
+专门攻击结算的（`seller-rogue`：中标、收下托管、然后玩消失；`seller-hijack`：中标后在托管条款里塞
+一个**陌生收款钱包**）。各自用 LLM 决定"接不接、报多少"（不低于各自成本底价）。买家给出理由授标——
+但**每一笔出账都先过一道代码强制的策略检查（Egress PEP）**，只会向它预期的钱包入金。它把货款锁进
+**Solana 托管合约**，中标者交付**真实的 TxODDS 世界杯数据**，买家**再执行一遍客观的 TxLINE 读取**，
+托管**仅在验证通过后放款**。若 rogue 到期没交付，买家等过链上 deadline 后**用托管合约的 refund 指令
+单方面收回资金**（该轮变红、带自己的 Explorer 链接）。若 hijacker 想改收款地址，PEP 在**任何交易
+签名之前就拒绝入金**——它中了标却一分钱赚不到，而且*全程零 SOL 移动*。每一步都是 devnet 上可查证的
+真实交易；React 面板把消息流实时折叠成拍卖时间线。
 
 ```
-WANT → 四个 LLM 出价（persona 定价）→ 授标+理由 → 托管入金 ─┬→ 交付真实数据 → 链上放款
-                                                            └→ 无交付 → 过期 → 链上退款
+                                           ┌ Egress PEP：向陌生钱包付款？签名前拒绝——无 tx、无资金移动
+WANT → LLM 出价（persona 定价）→ 授标+理由 ┴→ 托管入金 → 交付 → 验证 → 链上放款
+                                               └→ 无交付 / 验证失败 → 过期 → 链上退款
 ```
 
 链上凭证（Solana Explorer，devnet——同一场 live session，两种结局）：
@@ -53,6 +57,21 @@ WANT → 四个 LLM 出价（persona 定价）→ 授标+理由 → 托管入金
 
 这就是论点：**agent 市场会以人类不会盯着看的方式坏掉。** 结算轨道必须自带验证、自有仲裁、
 slashing 与信誉——见[路线图](PLAN.md)（verify-then-pay 流水线，出处见[提案](PROPOSAL.zh.md)）。
+
+### 预防层——Egress PEP
+
+上面六个发现都属于*检测*——市场坏了、我们事后抓住。另一半是*预防*：在坏动作发生**之前**就拦住。
+现在每一个出站动作——deposit、release、refund、出站 HTTP——都先过一道代码强制的**策略执行点
+（PEP）**（"模型提议，代码裁决"）：收款人白名单、按 reference 的防重放、支出预算、频率上限、
+出站域名白名单，每一次拒绝都打上 **reason code** 并写入审计日志。抓取数据里的 prompt injection、
+或被劫持的线程消息，可以*请求*买家付给错误的钱包——但*做不到*，因为裁决逻辑活在 prompt 够不到
+的代码里。
+
+demo 用 `seller-hijack` 把这件事演出来：它压价中标，然后往托管条款里塞一个**陌生收款钱包**。
+买家的 PEP 钉死预期钱包、拒绝入金——`RECIPIENT_NOT_ALLOWED`——于是 hijacker 中了标却一分钱赚
+不到。**这里对"它是什么"保持诚实：拦截不是链上交易。** 没有签名可展示；凭证是那条审计记录、
+加上那笔**本该出现却没出现的 deposit**，与正常轮真实的 Explorer 链接形成对照。预防天然比结算
+留下*更小*的足迹。
 
 ## 快速开始
 
@@ -90,7 +109,17 @@ cd examples/marketplace && npm install && npm start     # 打印 session id
 - 向买家转发 `ARBITER_KEYPAIR_B58`；结算模式可配置（`SETTLEMENT_MODE`）。
 - **DeepSeek** 成为第四个 LLM provider，并为推理型模型设 token 下限。
 - 卖家免租门槛启动预检；托管 reference 绑定加每次运行唯一的盐。
-- 全程测试绿灯：agent-runtime 37/37 · feed 10/10 · web 7/7（各处 typecheck 通过）。
+- **verify-then-pay**：买家在放款前再执行一遍客观的 TxLINE 读取（消息流里的 `VERIFIED` /
+  `VERIFICATION_FAILED`），配一个脚本化的坏数据卖家（`DEMO_FAIL_VERIFICATION=1`、
+  `TXLINE_DELIVERY_MODE=bad_count|invalid_json`），让评委现场看到一次放款被拦下。
+- 可选的 `arbiter-agent` 流程（`ARBITER_AGENT_ENABLED=1`）：中立 agent 验证并发出
+  `ARBITER_VERIFIED` / `ARBITER_REJECTED`，再签放款/退款（链上那半仍受第 3 条阻塞，待自部署仲裁）。
+- **预防层——统一的 Egress PEP**（`packages/agent-runtime/src/market/egress.ts`）：一道代码强制的
+  策略检查（收款人白名单 · reference 防重放 · 预算 · 频率 · 出站域名白名单）+ reason-code 分类
+  + 审计日志，接在买家的 deposit/release/refund 与卖家的 TxLINE 外呼上。被拦的回合向线程发
+  `EGRESS_DENIED`，面板显示紫色 **PEP blocked** 徽章（不伪造 Explorer 链接——拦截不是 tx）。
+  `seller-hijack` persona（改收款钱包）驱动这条 demo 拍点。
+- 全程测试绿灯：agent-runtime · buyer · seller · arbiter · feed · web，各处 typecheck 通过。
 
 ## 路线图（版本对应见 [PLAN.md](PLAN.md)）
 

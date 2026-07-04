@@ -5,10 +5,37 @@
  * services were useful scaffolding, but they dilute the market story and are intentionally not routed
  * here anymore.
  */
-import { complete, parseJsonReply } from '@pay/agent-runtime'
+import {
+  complete, parseJsonReply,
+  checkEgress, newEgressState, AuditLog,
+  type EgressPolicy, type EgressAction,
+} from '@pay/agent-runtime'
 
 const TXLINE_BASE = process.env.TXLINE_BASE_URL || 'https://txline-dev.txodds.com'
 const deliveryMode = (): string => (process.env.TXLINE_DELIVERY_MODE ?? 'normal').trim().toLowerCase()
+
+/**
+ * Egress PEP for the seller's one outbound dependency - the TxLINE API. This is the "an agent cannot
+ * beacon out to an attacker host" fence: even if a prompt injection in a market message convinced the
+ * LLM layer to fetch elsewhere, the egress layer refuses the call before it leaves the process.
+ *
+ * The allowlist is built ONCE at startup from the SAME TXLINE_BASE the fetch uses, so the default config
+ * always passes. Every outbound call - allow or deny - is recorded in the audit trail and echoed on the
+ * `[egress]` channel. A DENY throws, so the delivery fails exactly like an unreachable service would:
+ * index.ts catches it and reports failure without crashing the agent loop.
+ */
+export const egressAudit = new AuditLog(`seller:${process.env.AGENT_NAME ?? 'seller-agent'}`)
+const egressState = newEgressState()
+const egressPolicy: EgressPolicy = { allowedHosts: new Set([new URL(TXLINE_BASE).host]) }
+
+export async function guardedFetch(url: string, init?: RequestInit): Promise<Response> {
+  const action: EgressAction = { kind: 'http', host: new URL(url).host }
+  const verdict = checkEgress(egressState, egressPolicy, action, Date.now())
+  const entry = egressAudit.record(action, verdict)
+  console.log('[egress]', JSON.stringify(entry))
+  if (!verdict.allow) throw new Error(`egress denied: ${verdict.detail}`)
+  return fetch(url, init)
+}
 
 export async function deliverService(request: string): Promise<string> {
   if (deliveryMode() === 'invalid_json') return 'not-json-for-verification-demo'
@@ -23,10 +50,10 @@ export async function deliverService(request: string): Promise<string> {
 async function txlineGet(path: string): Promise<unknown> {
   const apiToken = process.env.TXLINE_API_KEY
   if (!apiToken) return { error: 'TXLINE_API_KEY not set - run the one-time subscribe (see examples/txodds)' }
-  const auth = await fetch(`${TXLINE_BASE}/auth/guest/start`, { method: 'POST' })
+  const auth = await guardedFetch(`${TXLINE_BASE}/auth/guest/start`, { method: 'POST' })
   if (!auth.ok) return { error: `txline auth ${auth.status}` }
   const jwt = ((await auth.json()) as { token: string }).token
-  const res = await fetch(`${TXLINE_BASE}${path}`, {
+  const res = await guardedFetch(`${TXLINE_BASE}${path}`, {
     headers: { Authorization: `Bearer ${jwt}`, 'X-Api-Token': apiToken },
   })
   if (!res.ok) return { error: `txline ${path} ${res.status}` }
