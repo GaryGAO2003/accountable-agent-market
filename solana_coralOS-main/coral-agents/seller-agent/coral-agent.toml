@@ -17,6 +17,7 @@ expression = "MIT"
 
 [options]
 SELLER_WALLET = { type = "string", description = "Devnet wallet pubkey that receives payments" }
+SELLER_KEYPAIR_B58 = { type = "string", default = "", description = "Base58-encoded devnet seller keypair; signs seller bond transfers" }
 AGENT_NAME = { type = "string", default = "seller-agent", description = "Market identity for this seller persona" }
 SERVICES = { type = "string", default = "txline", description = "Inventory; the TxODDS demo uses txline" }
 FLOOR_SOL = { type = "f64", default = 0.0005, description = "Minimum bid in SOL" }
@@ -24,6 +25,9 @@ PERSONA = { type = "string", default = "a TxODDS specialist selling verified fai
 SERVICE = { type = "string", default = "txline", description = "Delivery service; only txline is routed" }
 SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL" }
 SETTLEMENT_MODE = { type = "string", default = "arbiter", description = "arbiter (default) | direct legacy base escrow" }
+BOND_HOLDER_WALLET = { type = "string", default = "", description = "Wallet that temporarily holds seller bonds, usually the arbiter wallet" }
+SELLER_BOND_SOL = { type = "f64", default = 0.0001, description = "Transfer-backed seller bond posted after escrow is funded; 0 disables" }
+MAX_BOND_SOL = { type = "f64", default = 0.01, description = "Hard cap on seller bond transfer size" }
 ESCROW_DEADLINE_SECS = { type = "f64", default = 600, description = "Refund deadline for escrow deposits (seconds)" }
 TXLINE_API_KEY = { type = "string", default = "", description = "Activated TxLINE API token" }
 TXLINE_BASE_URL = { type = "string", default = "", description = "Override the TxLINE host" }

@@ -18,6 +18,7 @@ expression = "MIT"
 [options]
 BUYER_KEYPAIR_B58 = { type = "string", description = "Base58-encoded devnet keypair - signs deposit/release" }
 ARBITER_KEYPAIR_B58 = { type = "string", default = "", description = "Base58-encoded neutral arbiter keypair for arbiter settlement" }
+ARBITER_PROGRAM_ID = { type = "string", default = "", description = "Override arbiter wrapper program id; useful for local/forked arbiter deployments" }
 AGENT_NAME = { type = "string", default = "buyer-agent", description = "Market identity (matches the registry name)" }
 SELLER_WALLET = { type = "string", default = "", description = "Legacy alias for EXPECTED_SELLER_WALLET - the buyer reads it as a fallback when EXPECTED_SELLER_WALLET is unset" }
 EXPECTED_SELLER_WALLET = { type = "string", default = "", description = "Egress PEP recipient allowlist: the payout wallet the buyer expects sellers to be paid at (personas share one in the demo). Non-empty binds it as the sole approved payout - an ESCROW_REQUIRED naming a different seller= trips RECIPIENT_NOT_ALLOWED before any deposit (F3). Falls back to SELLER_WALLET" }
@@ -33,6 +34,11 @@ BUYER_ARGS = { type = "string", default = "", description = "Comma-separated arg
 MARKET_SELLERS = { type = "string", default = "seller-worldcup,seller-fast,seller-premium", description = "Comma-separated seller names in the market thread" }
 ARBITER_AGENT_ENABLED = { type = "string", default = "", description = "Set to 1 to delegate objective re-exec + release/refund to arbiter-agent" }
 ARBITER_AGENT_NAME = { type = "string", default = "arbiter-agent", description = "CoralOS agent name for the neutral arbiter" }
+CHALLENGER_AGENT_ENABLED = { type = "string", default = "", description = "Set to 1 to include challenger-agent during the optimistic challenge window" }
+CHALLENGER_AGENT_NAME = { type = "string", default = "challenger-agent", description = "CoralOS agent name for the independent challenger" }
+CHALLENGE_WINDOW_MS = { type = "f64", default = 5000, description = "Optimistic challenge window after DELIVERED before release" }
+AUTO_CHALLENGE_ON_FAILED_VERIFY = { type = "string", default = "1", description = "When challenger-agent is absent, buyer opens a challenge itself if objective verification fails; set 0 to only wait" }
+SELLER_BOND_SOL = { type = "f64", default = 0.0001, description = "Seller bond amount used for transfer-backed L1 slash events" }
 BID_WINDOW_MS = { type = "f64", default = 5000, description = "How long to collect competing bids each round" }
 CYCLE_INTERVAL_MS = { type = "f64", default = 30000, description = "Delay between market rounds" }
 SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL (devnet)" }

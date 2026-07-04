@@ -18,11 +18,12 @@
 import {
   startCoralAgent, complete, parseJsonReply, loadKeypairB58,
   formatWant, parseBid, parseEscrowRequired, formatAward, formatDeposited,
-  parseDelivered, formatVerified, formatArbiterReview,
+  parseDelivered, formatVerified, formatArbiterReview, parseChallengeOpened,
+  formatChallengeReview, formatChallengeOpened, formatChallengeDecision, formatSlash, signTransfer,
   selectBids, pickCheapest,
   commitEgress, newEgressState, AuditLog,
   ReputationLedger, sendMemo,
-  type Bid, type Delivered, type EscrowTerms, type CoralAgentContext,
+  type Bid, type Delivered, type EscrowTerms, type CoralAgentContext, type ChallengeOpened,
 } from '@pay/agent-runtime'
 import { PublicKey } from '@solana/web3.js'
 import { makeProgram, deposit, release, refund, escrowPda } from './escrow.js'
@@ -33,6 +34,7 @@ import {
 import { buildEgressPolicy, checkEgressAudited } from './guard.js'
 import { makeRecordOnce, partitionFlagged, frozenOutLine } from './reputation.js'
 import { verifyDelivery } from './verify.js'
+import { planChallengeWindow } from './challenge.js'
 
 const RPC = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
 const BUDGET = Number(process.env.BUYER_MAX_SOL ?? '0.001')
@@ -49,6 +51,11 @@ const SELLERS = (process.env.MARKET_SELLERS ?? 'seller-worldcup,seller-fast,sell
   .split(',').map((s) => s.trim()).filter(Boolean)
 const ARBITER_AGENT_ENABLED = process.env.ARBITER_AGENT_ENABLED === '1'
 const ARBITER_AGENT_NAME = process.env.ARBITER_AGENT_NAME ?? 'arbiter-agent'
+const CHALLENGER_AGENT_ENABLED = process.env.CHALLENGER_AGENT_ENABLED === '1'
+const CHALLENGER_AGENT_NAME = process.env.CHALLENGER_AGENT_NAME ?? 'challenger-agent'
+const CHALLENGE_WINDOW_MS = Number(process.env.CHALLENGE_WINDOW_MS ?? '5000')
+const AUTO_CHALLENGE_ON_FAILED_VERIFY = process.env.AUTO_CHALLENGE_ON_FAILED_VERIFY !== '0'
+const SELLER_BOND_SOL = Number(process.env.SELLER_BOND_SOL ?? '0.0001')
 // F3 / egress recipient allowlist: the payout wallet the buyer expects sellers to be paid at (the demo
 // personas share one receive wallet). When set it becomes the PEP's sole allowed recipient, so an
 // ESCROW_REQUIRED naming a different seller= trips RECIPIENT_NOT_ALLOWED before any deposit. Read from
@@ -138,7 +145,11 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
   // Folds each round's terminal outcome into a per-seller score/tier; a flagged seller is frozen out below.
   const repLedger = new ReputationLedger({ trust: REP_TRUST_THRESHOLD, flag: REP_FLAG_THRESHOLD })
 
-  const threadParticipants = ARBITER_AGENT_ENABLED ? [...SELLERS, ARBITER_AGENT_NAME] : SELLERS
+  const threadParticipants = [
+    ...SELLERS,
+    ...(CHALLENGER_AGENT_ENABLED ? [CHALLENGER_AGENT_NAME] : []),
+    ...(ARBITER_AGENT_ENABLED ? [ARBITER_AGENT_NAME] : []),
+  ]
   for (const s of threadParticipants) {
     try { await ctx.waitForAgent(s, 8000) } catch { /* seller may already be present */ }
   }
@@ -234,10 +245,11 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
         if (waitMs > 0) await sleep(waitMs)
         // EGRESS PEP - a refund returns escrow to the buyer's OWN wallet (no recipient allowlist, no
         // budget: this is money coming back), but it still passes the velocity fence + amount sanity. If
-        // the PEP denies it, just log and leave the funds locked (they stay refundable) - no thread notice.
+        // the PEP denies it, leave the funds locked (they stay refundable) and mirror the audit verdict to
+        // the thread so the dashboard still shows that the refund path was checked.
         const refundAction = { kind: 'refund', recipient: buyer.publicKey.toBase58(), amountSol: terms.amountSol } as const
         const refundVerdict = await checkEgressAudited(egressState, egressPolicy, auditLog, round, refundAction,
-          (line) => console.error(`[buyer] round ${round}: ${line}`))
+          (line) => ctx.send(line, thread, [winner.by]))
         if (!refundVerdict.allow) {
           console.error(`[buyer] round ${round}: refund blocked by egress (${refundVerdict.code}) - funds stay locked`)
           return
@@ -288,48 +300,90 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
       const delivered = await waitFor<Delivered>(ctx, round, parseDelivered, 30_000)
 
       if (delivered) {
-        if (ARBITER_AGENT_ENABLED) {
-          // Arbiter-agent settlement: the neutral arbiter agent re-execs + signs the release/refund, so
-          // there is no direct buyer egress here to gate - its own PEP fences that tx on its side.
-          if (requestedSettlement !== 'arbiter' || !vault || !arbiter) {
-            console.error(`[buyer] round ${round}: arbiter-agent mode requires settlement=arbiter - funds stay in escrow`)
+        const challengePlan = await planChallengeWindow(
+          { service: SERVICE, arg },
+          delivered.raw,
+          { round, challengeWindowMs: CHALLENGE_WINDOW_MS, autoChallenge: CHALLENGER_AGENT_ENABLED ? false : AUTO_CHALLENGE_ON_FAILED_VERIFY },
+        )
+        if (challengePlan.verification?.ok) {
+          await ctx.send(formatVerified({ round, ...challengePlan.verification }), thread, [winner.by])
+        }
+        if (CHALLENGER_AGENT_ENABLED) {
+          await ctx.send(formatChallengeReview({ round, service: SERVICE, arg, raw: delivered.raw }), thread, [CHALLENGER_AGENT_NAME])
+        }
+
+        let challenge: ChallengeOpened | null = null
+        if (challengePlan.action === 'challenge') {
+          challenge = { round, by: 'buyer-agent', reason: challengePlan.reason }
+          await ctx.send(formatChallengeOpened(challenge), thread, ARBITER_AGENT_ENABLED ? [winner.by, ARBITER_AGENT_NAME] : [winner.by])
+        } else if (challengePlan.waitMs > 0) {
+          challenge = await waitFor<ChallengeOpened>(ctx, round, parseChallengeOpened, challengePlan.waitMs)
+        }
+
+        if (challenge) {
+          if (ARBITER_AGENT_ENABLED) {
+            // Arbiter-agent settlement: the neutral arbiter agent re-execs + signs release/refund/slash.
+            if (requestedSettlement !== 'arbiter' || !vault || !arbiter) {
+              console.error(`[buyer] round ${round}: challenged arbiter-agent mode requires settlement=arbiter - funds stay in escrow`)
+              await sleep(CYCLE_MS)
+              continue
+            }
+            await ctx.send(
+              formatArbiterReview({
+                round,
+                service: SERVICE,
+                arg,
+                reference: terms.reference,
+                seller: terms.seller,
+                payer: buyer.publicKey.toBase58(),
+                ...(challenge.challenger ? { challenger: challenge.challenger } : {}),
+                raw: delivered.raw,
+              }),
+              thread,
+              [ARBITER_AGENT_NAME],
+            )
+            console.error(`[buyer] round ${round}: ${challenge.by} opened challenge; delegated objective re-exec to ${ARBITER_AGENT_NAME}`)
             await sleep(CYCLE_MS)
             continue
           }
-          await ctx.send(
-            formatArbiterReview({
-              round,
-              service: SERVICE,
-              arg,
-              reference: terms.reference,
-              seller: terms.seller,
-              payer: buyer.publicKey.toBase58(),
-              raw: delivered.raw,
-            }),
-            thread,
-            [ARBITER_AGENT_NAME],
-          )
-          console.error(`[buyer] round ${round}: delegated verification + release to ${ARBITER_AGENT_NAME}`)
-          // No recordOnce here: in arbiter-agent mode the neutral arbiter owns the terminal outcome (it
-          // re-execs + releases/refunds on its side), so the demo's direct-settlement rep trail doesn't apply.
-          await sleep(CYCLE_MS)
-          continue
-        }
-
-        const verification = await verifyDelivery({ service: SERVICE, arg }, delivered.raw)
-        await ctx.send(formatVerified({ round, ...verification }), thread, [winner.by])
-        if (!verification.ok) {
-          console.error(`[buyer] round ${round}: verification failed (${verification.code}) - ${verification.reason}`)
-          // Record verify_failed NOW, before any refund wait: bad delivery is the terminal outcome even though
-          // the money is reclaimed below. First terminal outcome wins, so the later refund send won't re-record.
-          await recordOnce('verify_failed')
-          if (canRefundInRound) {
-            await refundAfterDeadline() // bad data is treated like no delivery: the money comes back
-          } else {
-            console.error(`[buyer] round ${round}: funds stay in escrow, refundable after the deadline`)
+          const verification = challengePlan.verification ?? await verifyDelivery({ service: SERVICE, arg }, delivered.raw)
+          await ctx.send(formatVerified({ round, ...verification }), thread, [winner.by])
+          await ctx.send(formatChallengeDecision({
+            round,
+            upheld: !verification.ok,
+            code: verification.code,
+            reason: verification.reason,
+          }), thread, [winner.by])
+          if (!verification.ok) {
+            console.error(`[buyer] round ${round}: challenge upheld (${verification.code}) - ${verification.reason}`)
+            // L3: the challenge-upheld (bad delivery) is the terminal outcome - record verify_failed NOW,
+            // before any slash/refund wait. First terminal outcome wins, so the later refund won't re-record.
+            await recordOnce('verify_failed')
+            if (arbiter && SELLER_BOND_SOL > 0) {
+              try {
+                const slashSig = await signTransfer(arbiter, challenge.challenger ?? buyer.publicKey.toBase58(), SELLER_BOND_SOL, { maxSol: SELLER_BOND_SOL })
+                await ctx.send(formatSlash({
+                  round,
+                  sig: slashSig,
+                  amountSol: SELLER_BOND_SOL,
+                  from: arbiter.publicKey.toBase58(),
+                  to: challenge.challenger ?? buyer.publicKey.toBase58(),
+                  bond: 'seller',
+                  settlement: 'transfer',
+                  arbiter: true,
+                }), thread, [winner.by])
+              } catch (e) {
+                console.error(`[buyer] round ${round}: slash transfer failed - ${e}`)
+              }
+            }
+            if (canRefundInRound) {
+              await refundAfterDeadline() // bad data is treated like no delivery: the money comes back
+            } else {
+              console.error(`[buyer] round ${round}: funds stay in escrow, refundable after the deadline`)
+            }
+            await sleep(CYCLE_MS)
+            continue
           }
-          await sleep(CYCLE_MS)
-          continue
         }
         // EGRESS PEP - releasing pays the seller out of escrow; gate the payout (recipient allowlist +
         // velocity) before signing. A denied release leaves the round unsettled (funds stay locked - the

@@ -60,7 +60,7 @@ describe('foldRounds', () => {
       code: 'txline_count_mismatch',
       reason: 'delivered count differs from re-exec',
     })
-    expect(r.status).toBe('verification_failed')
+    expect(r.status).toBe('rejected')
   })
 
   it('treats ARBITER_RELEASED as a settled release without changing the wire protocol', () => {
@@ -72,6 +72,33 @@ describe('foldRounds', () => {
     const [r] = foldRounds(msgs, sellers)
     expect(r.release?.sig).toBe('3PMa')
     expect(r.status).toBe('settled')
+  })
+
+  it('folds L1 bond, challenge, decision, and slash evidence', () => {
+    const [r] = foldRounds([
+      ...round1.slice(0, 7),
+      { sender: 'seller-premium', text: 'BOND_POSTED round=1 seller=Seller111 holder=Arbiter111 amount=0.0001 sig=BondSig111' },
+      { sender: 'challenger-agent', text: 'CHALLENGE_OPENED round=1 by=challenger-agent reason="count differs" challenger=Challenger111 bondSig=ChallengerBondSig111' },
+      { sender: 'arbiter-agent', text: 'CHALLENGE_UPHELD round=1 code=txline_count_mismatch reason="count differs"' },
+      { sender: 'arbiter-agent', text: 'ARBITER_SLASHED round=1 sig=SlashSig111 amount=0.0001 from=Arbiter111 to=Challenger111 bond=seller settlement=transfer' },
+    ], sellers)
+
+    expect(r.bond).toEqual({ seller: 'Seller111', holder: 'Arbiter111', amountSol: 0.0001, sig: 'BondSig111' })
+    expect(r.challenge).toEqual({
+      by: 'challenger-agent',
+      reason: 'count differs',
+      challenger: 'Challenger111',
+      bondSig: 'ChallengerBondSig111',
+    })
+    expect(r.challengeDecision).toEqual({ upheld: true, code: 'txline_count_mismatch', reason: 'count differs' })
+    expect(r.slash).toEqual({
+      sig: 'SlashSig111',
+      amountSol: 0.0001,
+      from: 'Arbiter111',
+      to: 'Challenger111',
+      bond: 'seller',
+    })
+    expect(r.status).toBe('slashed')
   })
 
   it('marks the non-bidding seller as declined (self-selection)', () => {
@@ -140,6 +167,31 @@ describe('foldRounds', () => {
     expect(r.release).toBeUndefined()
     expect(r.refund).toBeUndefined()
     expect(r.refunded).toBeUndefined()
+  })
+
+  it('collects ALLOW and DENY egress audits without changing the round terminal state', () => {
+    const [r1, r2] = foldRounds([
+      ...round1,
+      { sender: 'buyer-agent', text: 'EGRESS_AUDIT round=1 seq=1 decision=ALLOW action=deposit detail=deposit 0.0005 SOL -> 7jwB' },
+      { sender: 'buyer-agent', text: 'WANT round=2 service=txline arg=fixtures budget=0.001' },
+      { sender: 'buyer-agent', text: 'EGRESS_AUDIT round=2 seq=2 decision=DENY action=deposit code=RECIPIENT_NOT_ALLOWED detail=recipient bad wallet' },
+      { sender: 'buyer-agent', text: 'EGRESS_DENIED round=2 code=RECIPIENT_NOT_ALLOWED action=deposit detail=recipient bad wallet' },
+    ], sellers)
+    expect(r1.status).toBe('settled')
+    expect(r1.egressAudits).toEqual([
+      { seq: 1, decision: 'ALLOW', action: 'deposit', detail: 'deposit 0.0005 SOL -> 7jwB', by: 'buyer-agent' },
+    ])
+    expect(r2.status).toBe('blocked')
+    expect(r2.egressAudits).toEqual([
+      {
+        seq: 2,
+        decision: 'DENY',
+        action: 'deposit',
+        code: 'RECIPIENT_NOT_ALLOWED',
+        detail: 'recipient bad wallet',
+        by: 'buyer-agent',
+      },
+    ])
   })
 
   it('keeps a round blocked even if a stray settlement verb arrives afterward', () => {

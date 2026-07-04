@@ -7,7 +7,7 @@ only after verification passes. The product sold is the verified **TxODDS World 
 `txline` service) — the same one the oracle sells.
 
 ```
-WANT txline → (sellers bid) → AWARD best value → deposit (escrow) → DELIVERED → VERIFIED → release
+WANT txline → (sellers bid) → AWARD best value → deposit (escrow) → DELIVERED → challenge window → release/slash
 ```
 
 > **CoralOS docs:** the market is one [Session](https://docs.coralos.ai/concepts/sessions) of agents on a
@@ -29,7 +29,7 @@ The escrow program is already deployed to devnet — no `anchor deploy` needed.
 
 ```sh
 (cd examples/txodds && npm run mint)       # one-time: free devnet TxLINE token → .env
-bash build-agents.sh                       # build buyer, seller, and arbiter images
+bash build-agents.sh                       # build buyer, seller, challenger, and arbiter images
 docker compose up -d coral                 # CoralOS (MCP coordinator)
 cd examples/marketplace && npm install && npm start
 ```
@@ -74,6 +74,17 @@ WANT → BID → AWARD → DEPOSITED → DELIVERED → ARBITER_REVIEW → ARBITE
 If the arbiter rejects a delivery, it emits `ARBITER_REJECTED`. Set `ARBITER_REFUND_ON_REJECT=1` to
 attempt `ARBITER_REFUNDED` after rejection; the deployed escrow refund deadline still applies.
 
+## Add the L1 challenger
+
+Set `CHALLENGER_AGENT_ENABLED=1` to include the independent challenger in the market thread. The buyer
+sends `CHALLENGE_REVIEW` after delivery, the challenger re-executes the same TxLINE predicate, posts a
+bond, and opens `CHALLENGE_OPENED` only for bad evidence. With `ARBITER_AGENT_ENABLED=1`, the arbiter
+then emits `CHALLENGE_UPHELD` / `CHALLENGE_REJECTED` and `ARBITER_SLASHED` when a bond is slashed.
+
+```sh
+cd examples/marketplace && CHALLENGER_AGENT_ENABLED=1 ARBITER_AGENT_ENABLED=1 npm start
+```
+
 ## Script the failed-verification path
 
 Set `DEMO_FAIL_VERIFICATION=1` before launching the marketplace to run a one-seller scripted round
@@ -100,6 +111,9 @@ By default this uses `TXLINE_DELIVERY_MODE=bad_count`; set `DEMO_FAILING_SELLER=
 |-----|--------|
 | `BUYER_ARG` | the txline request (`fixtures` default; `edge <fixtureId>` for the headline read) |
 | `ARBITER_AGENT_ENABLED=1` | include `arbiter-agent` as a third-party verifier and settlement signer |
+| `CHALLENGER_AGENT_ENABLED=1` | include `challenger-agent` for optimistic review before release |
+| `SELLER_BOND_SOL` / `CHALLENGER_BOND_SOL` | transfer-backed bond sizes used in L1 slash evidence |
+| `CHALLENGE_WINDOW_MS` | how long the buyer waits for challenges after `DELIVERED` |
 | `ARBITER_REFUND_ON_REJECT=1` | make arbiter-agent attempt refund after `ARBITER_REJECTED` |
 | `DEMO_FAIL_VERIFICATION=1` | launch a deterministic one-seller `VERIFICATION_FAILED` demo round |
 | `TXLINE_DELIVERY_MODE=bad_count\|invalid_json` | corrupt a seller delivery when the failure demo is enabled |

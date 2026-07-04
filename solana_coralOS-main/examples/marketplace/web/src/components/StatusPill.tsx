@@ -6,9 +6,12 @@ const LABEL: Record<RoundStatus, string> = {
   deposited: 'in escrow',
   delivered: 'delivered',
   verified: 'verified',
+  challenged: 'challenged',
+  rejected: 'rejected',
   verification_failed: 'verify failed',
   settled: 'settled',
   refunded: 'refunded',
+  slashed: 'slashed',
   blocked: 'blocked',
 }
 
