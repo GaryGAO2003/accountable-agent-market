@@ -21,6 +21,7 @@ import {
   parseDelivered, formatVerified, formatArbiterReview,
   selectBids, pickCheapest,
   commitEgress, newEgressState, AuditLog,
+  ReputationLedger, sendMemo,
   type Bid, type Delivered, type EscrowTerms, type CoralAgentContext,
 } from '@pay/agent-runtime'
 import { PublicKey } from '@solana/web3.js'
@@ -30,6 +31,7 @@ import {
   openArbitrated, arbitrateRelease, arbitratedEscrowPda,
 } from './arbiter.js'
 import { buildEgressPolicy, checkEgressAudited } from './guard.js'
+import { makeRecordOnce, partitionFlagged, frozenOutLine } from './reputation.js'
 import { verifyDelivery } from './verify.js'
 
 const RPC = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
@@ -68,6 +70,18 @@ const egressPolicy = buildEgressPolicy({
 })
 const SETTLEMENT_MODE = (process.env.SETTLEMENT_MODE ?? 'arbiter').toLowerCase()
 const trace = process.env.TRACE === '1'
+
+// L3 reputation (cross-round memory): tier thresholds are inclusive - a seller at/above REP_TRUST_THRESHOLD
+// reads trusted, at/below REP_FLAG_THRESHOLD reads flagged (and is frozen out of future awards). REP_MEMO=1
+// anchors each standing change on-chain via an SPL memo (~5k lamports/write); REP_MEMO=0 keeps the trail
+// thread-only (no memo fee, no on-chain proof). parseInt (not `|| dflt`) so an explicit 0 threshold sticks.
+const intEnv = (raw: string | undefined, dflt: number): number => {
+  const n = Number.parseInt(raw ?? '', 10)
+  return Number.isFinite(n) ? n : dflt
+}
+const REP_FLAG_THRESHOLD = intEnv(process.env.REP_FLAG_THRESHOLD, -3)
+const REP_TRUST_THRESHOLD = intEnv(process.env.REP_TRUST_THRESHOLD, 2)
+const REP_MEMO = (process.env.REP_MEMO ?? '1') !== '0'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const expl = (kind: 'tx' | 'address', id: string) => `https://explorer.solana.com/${kind}/${id}?cluster=devnet`
@@ -120,6 +134,9 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
   // after an action lands, and every verdict (allow or deny) is appended to auditLog (docker logs = sink).
   const egressState = newEgressState()
   const auditLog = new AuditLog('buyer')
+  // L3 reputation ledger - one per session, the market's cross-round memory of who delivered vs. defaulted.
+  // Folds each round's terminal outcome into a per-seller score/tier; a flagged seller is frozen out below.
+  const repLedger = new ReputationLedger({ trust: REP_TRUST_THRESHOLD, flag: REP_FLAG_THRESHOLD })
 
   const threadParticipants = ARBITER_AGENT_ENABLED ? [...SELLERS, ARBITER_AGENT_NAME] : SELLERS
   for (const s of threadParticipants) {
@@ -152,9 +169,29 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
       const pool = selectBids(bids, round)
       if (pool.length === 0) { console.error(`[buyer] round ${round}: NO_SELLERS`); await sleep(CYCLE_MS); continue }
 
-      // -- award the best value ----------------------------------------------
-      const { winner, reason } = await pickWinner(pool)
+      // -- L3 freeze: drop flagged sellers from the pool (the one-way door) ---
+      // A seller the ledger has flagged never gets awarded again, so it can't climb back to neutral. The
+      // ledger stays pure score math; this partition is where the irreversibility actually lives.
+      const { active, frozen } = partitionFlagged(pool, (b) => repLedger.tier(b.by) === 'flagged')
+      for (const b of frozen) console.error(frozenOutLine(round, b.by, repLedger.score(b.by)))
+      if (active.length === 0) {
+        console.error(`[buyer] round ${round}: NO_SELLERS (all bidders flagged)`)
+        await sleep(CYCLE_MS); continue
+      }
+
+      // -- award the best value (only non-flagged bids are eligible) ----------
+      const { winner, reason } = await pickWinner(active)
       await ctx.send(formatAward(round, winner.by, reason), thread, [winner.by])
+      // The round's one-shot reputation recorder: FIRST terminal outcome wins, so exactly one ledger update
+      // + one REPUTATION thread line per round. Created here (winner known) so it is in scope for both the
+      // deposit-deny branch and the refundAfterDeadline closure below; a fresh recorder per round resets the
+      // guard. The memo is an on-chain LOG of the standing change, not a money action - it bypasses the PEP.
+      const recordOnce = makeRecordOnce({
+        ledger: repLedger, round, seller: winner.by, memo: REP_MEMO,
+        writeMemo: (text) => sendMemo(buyer, text),
+        sendThread: (line) => ctx.send(line, thread, [winner.by]),
+        log: (line) => console.error(line),
+      })
 
       // -- settle through escrow: deposit -> DEPOSITED -> wait DELIVERED -> release
       const terms = await waitFor<EscrowTerms>(ctx, round, parseEscrowRequired, 15_000)
@@ -169,6 +206,7 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
         (line) => ctx.send(line, thread, [winner.by]))
       if (!depositVerdict.allow) {
         console.error(`[buyer] round ${round}: deposit blocked (${depositVerdict.code}) - ${depositVerdict.detail}`)
+        await recordOnce('blocked') // egress refused the deposit: the seller's terms were rejected outright (-3)
         await sleep(CYCLE_MS); continue
       }
 
@@ -218,6 +256,9 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
           commitEgress(egressState, refundAction, Date.now()) // check -> act -> commit
           console.error(`[buyer] round ${round}: REFUNDED from ${winner.by} - ${expl('tx', refundSig)}`)
           await ctx.send(`REFUNDED round=${round} sig=${refundSig} settlement=direct`, thread, [winner.by])
+          // Pure no-delivery ghosting: -3. The verify-failed path already recorded verify_failed, so on that
+          // path this is a no-op (first terminal outcome wins) - it only fires for a winner that never delivered.
+          await recordOnce('refunded')
         }
       }
       console.error(`[buyer] round ${round}: DEPOSITED ${terms.amountSol} SOL -> ${winner.by}`)
@@ -269,6 +310,8 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
             [ARBITER_AGENT_NAME],
           )
           console.error(`[buyer] round ${round}: delegated verification + release to ${ARBITER_AGENT_NAME}`)
+          // No recordOnce here: in arbiter-agent mode the neutral arbiter owns the terminal outcome (it
+          // re-execs + releases/refunds on its side), so the demo's direct-settlement rep trail doesn't apply.
           await sleep(CYCLE_MS)
           continue
         }
@@ -277,6 +320,9 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
         await ctx.send(formatVerified({ round, ...verification }), thread, [winner.by])
         if (!verification.ok) {
           console.error(`[buyer] round ${round}: verification failed (${verification.code}) - ${verification.reason}`)
+          // Record verify_failed NOW, before any refund wait: bad delivery is the terminal outcome even though
+          // the money is reclaimed below. First terminal outcome wins, so the later refund send won't re-record.
+          await recordOnce('verify_failed')
           if (canRefundInRound) {
             await refundAfterDeadline() // bad data is treated like no delivery: the money comes back
           } else {
@@ -303,6 +349,8 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
         const releaseVerb = requestedSettlement === 'arbiter' ? 'ARBITER_RELEASED' : 'RELEASED'
         console.error(`[buyer] round ${round}: ${releaseVerb} to ${winner.by} - ${expl('tx', releaseSig)}`)
         await ctx.send(`${releaseVerb} round=${round} sig=${releaseSig} settlement=${requestedSettlement}`, thread, [winner.by])
+        await recordOnce('settled') // verified delivery paid out of escrow: +2
+
       } else if (canRefundInRound) {
         // Accountability path: the winner took the escrow and never delivered.
         await refundAfterDeadline()

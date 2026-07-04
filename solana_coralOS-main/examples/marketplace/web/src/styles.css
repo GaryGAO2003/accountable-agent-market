@@ -264,3 +264,34 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   font-weight: 700; box-shadow: 0 0 0 3px var(--violet-tint); }
 @keyframes pep-reveal { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .pep-check { animation: none; } }
+
+/* ═══ L3 reputation (cross-round memory) — bid-row chips, a per-round standing line, and the summary strip.
+   Coral = frozen out (flagged), mint = trusted, violet = "the reputation ledger spoke". Append-only. ═══ */
+
+/* Bid-row chips — the money shot: a flagged seller's later bids read as dead-on-arrival. */
+.rep-chip { font-family: var(--mono); font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.rep-chip-flagged { color: var(--coral); border-color: var(--coral); background: var(--coral-tint); }
+.rep-chip-trusted { color: var(--mint); border-color: var(--mint); background: var(--mint-tint); }
+
+/* Per-round standing line — under the settlement footer; the memo link is attributed HERE (to reputation), never to settlement. */
+.rep-line { margin: 9px 2px 0; padding-top: 9px; border-top: 1px dashed var(--line);
+  font-family: var(--mono); font-size: 11.5px; color: var(--dim); line-height: 1.9; }
+.rep-line-label { color: var(--violet); font-weight: 700; letter-spacing: .02em; }
+.rep-line-seller { color: var(--ink); font-weight: 600; }
+.rep-memo { color: var(--violet); text-decoration: none; border: 1px solid var(--line); background: var(--card);
+  padding: 2px 8px; border-radius: 7px; font-size: 10.5px; white-space: nowrap; }
+.rep-memo:hover { border-color: var(--violet); }
+
+/* Tier tag — shared by the round line and the strip. */
+.rep-tier { font-weight: 700; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); }
+.rep-tier-trusted { color: var(--mint); border-color: var(--mint); background: var(--mint-tint); }
+.rep-tier-neutral { color: var(--dim); }
+.rep-tier-flagged { color: var(--coral); border-color: var(--coral); background: var(--coral-tint); }
+
+/* Summary strip — one unobtrusive row of per-seller standing above the rounds (violet = our software's memory). */
+.rep-strip { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 2px; padding: 8px 13px;
+  background: var(--violet-tint); border: 1px solid #e0d9f7; border-radius: 12px; font-size: 12px; }
+.rep-strip-label { font-family: var(--mono); font-size: 10px; letter-spacing: .13em; text-transform: uppercase; color: var(--violet); font-weight: 700; }
+.rep-seller { display: inline-flex; align-items: center; gap: 7px; }
+.rep-seller-name { font-weight: 600; color: var(--ink); }
+.rep-seller-score { font-family: var(--mono); color: var(--dim); font-variant-numeric: tabular-nums; }

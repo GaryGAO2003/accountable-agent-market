@@ -13,6 +13,7 @@ export async function startMarket(): Promise<string> {
 
 export interface FeedState {
   rounds: Feed['rounds']
+  reputation?: Feed['reputation']
   connected: boolean
   error?: string
 }
@@ -36,7 +37,7 @@ export function useFeed(session: string, intervalMs = 1000): FeedState {
         const r = await fetch(`${FEED_URL}/api/feed?session=${encodeURIComponent(session)}`)
         if (!r.ok) throw new Error(`feed ${r.status}`)
         const feed = (await r.json()) as Feed
-        if (!stop.current) setState({ rounds: feed.rounds ?? [], connected: true })
+        if (!stop.current) setState({ rounds: feed.rounds ?? [], reputation: feed.reputation, connected: true })
       } catch (e) {
         if (!stop.current) setState((s) => ({ ...s, connected: false, error: (e as Error).message }))
       }

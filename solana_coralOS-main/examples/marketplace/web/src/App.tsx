@@ -12,7 +12,7 @@ export default function App() {
   const [tab, setTab] = useState<'market' | 'flow'>('market')
   const [starting, setStarting] = useState(false)
   const [startErr, setStartErr] = useState<string>()
-  const { rounds, connected, error } = useFeed(session)
+  const { rounds, reputation, connected, error } = useFeed(session)
 
   async function onStart() {
     setStarting(true)
@@ -64,7 +64,7 @@ export default function App() {
         ) : (
           <>
             <Explainer />
-            {session ? <MarketView rounds={rounds} /> : (
+            {session ? <MarketView rounds={rounds} reputation={reputation} /> : (
               <p className="empty">Fund your wallets, then <strong>Start a market</strong> — agents will bid and settle live.</p>
             )}
           </>

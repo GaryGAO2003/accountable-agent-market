@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { foldRounds, type RawMessage } from './foldRounds.js'
+import { foldRounds, reputationSummary, type RawMessage } from './foldRounds.js'
 
 const sellers = ['seller-cheap', 'seller-honest', 'seller-premium']
 
@@ -168,5 +168,67 @@ describe('foldRounds', () => {
     const r = foldRounds(round1.slice(0, 3), sellers)[0]
     expect(r.status).toBe('bidding')
     expect(r.declined).toEqual([]) // bidding still open → not yet declined
+  })
+})
+
+describe('reputation (L3)', () => {
+  it('stamps round.reputation from a REPUTATION line with a memo sig, without changing status', () => {
+    const [r] = foldRounds([
+      ...round1, // a fully settled round
+      { sender: 'buyer-agent', text: 'REPUTATION seller=seller-premium score=2 tier=trusted outcome=settled round=1 sig=MemoSig123' },
+    ], sellers)
+    expect(r.reputation).toEqual({ seller: 'seller-premium', score: 2, tier: 'trusted', outcome: 'settled', sig: 'MemoSig123' })
+    expect(r.status).toBe('settled') // the REPUTATION line annotates; it does not re-settle the round
+  })
+
+  it('stamps round.reputation without a sig when the line carries none', () => {
+    const [r] = foldRounds([
+      ...round1,
+      { sender: 'buyer-agent', text: 'REPUTATION seller=seller-premium score=2 tier=trusted outcome=settled round=1' },
+    ], sellers)
+    expect(r.reputation).toEqual({ seller: 'seller-premium', score: 2, tier: 'trusted', outcome: 'settled' })
+    expect(r.reputation?.sig).toBeUndefined()
+  })
+
+  it('does not advance the round state machine — a REPUTATION line is an annotation, not a settlement', () => {
+    const [r] = foldRounds([
+      { sender: 'buyer-agent', text: 'WANT round=1 service=coingecko arg=x budget=0.001' },
+      { sender: 'buyer-agent', text: 'REPUTATION seller=seller-rogue score=-3 tier=flagged outcome=refunded round=1' },
+    ])
+    expect(r.status).toBe('bidding') // never set to settled/refunded/blocked by REPUTATION
+    expect(r.reputation?.tier).toBe('flagged')
+  })
+
+  it('stamps a bid neutral before its seller is flagged and flagged in later rounds (honest timeline)', () => {
+    const rounds = foldRounds([
+      // round 1 — the rogue wins, never delivers, gets refunded and flagged AT THE END of the round
+      { sender: 'buyer-agent', text: 'WANT round=1 service=coingecko arg=x budget=0.001' },
+      { sender: 'seller-rogue', text: 'BID round=1 price=0.0002 by=seller-rogue' },
+      { sender: 'buyer-agent', text: 'AWARD round=1 to=seller-rogue' },
+      { sender: 'buyer-agent', text: 'REFUNDED round=1' },
+      { sender: 'buyer-agent', text: 'REPUTATION seller=seller-rogue score=-3 tier=flagged outcome=refunded round=1' },
+      // round 2 — the now-flagged rogue bids again; this bid must fold as flagged
+      { sender: 'buyer-agent', text: 'WANT round=2 service=coingecko arg=x budget=0.001' },
+      { sender: 'seller-rogue', text: 'BID round=2 price=0.0001 by=seller-rogue' },
+    ])
+    const r1bid = rounds.find((r) => r.round === 1)!.bids.find((b) => b.by === 'seller-rogue')!
+    const r2bid = rounds.find((r) => r.round === 2)!.bids.find((b) => b.by === 'seller-rogue')!
+    expect(r1bid.sellerTier).toBe('neutral') // placed BEFORE the flag
+    expect(r2bid.sellerTier).toBe('flagged') // placed AFTER the flag
+  })
+
+  it('reputationSummary keeps the last standing per seller (later round wins)', () => {
+    const rounds = foldRounds([
+      { sender: 'b', text: 'WANT round=1 service=s arg=a budget=0.001' },
+      { sender: 'b', text: 'REPUTATION seller=seller-rogue score=2 tier=trusted outcome=settled round=1' },
+      { sender: 'b', text: 'WANT round=2 service=s arg=a budget=0.001' },
+      { sender: 'b', text: 'REPUTATION seller=seller-honest score=2 tier=trusted outcome=settled round=2' },
+      { sender: 'b', text: 'WANT round=3 service=s arg=a budget=0.001' },
+      { sender: 'b', text: 'REPUTATION seller=seller-rogue score=-3 tier=flagged outcome=refunded round=3' },
+    ])
+    expect(reputationSummary(rounds)).toEqual({
+      'seller-rogue': { score: -3, tier: 'flagged' }, // round 3 wins over round 1
+      'seller-honest': { score: 2, tier: 'trusted' },
+    })
   })
 })

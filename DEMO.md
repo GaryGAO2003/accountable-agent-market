@@ -79,8 +79,16 @@ persona demonstrates it — wins, swaps in a foreign payout wallet, and the buye
 tx — there's no signature to click; the proof is the audit line and the deposit that never appears,
 against a normal round's real Explorer link.
 
-The demo now shows all three: **trust working** (settled rounds), **trust broken but money safe**
-(refunded rounds), and **trust never extended** (a `PEP blocked` round where no funds ever move).
+And detection + prevention are both **per-incident** — so the third piece is memory: an L3
+**reputation ledger** folds every terminal outcome into a per-seller score (+2 settled, −3
+refunded/blocked/verify-failed), and one strike freezes the offender out of every later auction
+(its bids are dropped before the LLM ever sees them). Each standing change is a `REPUTATION`
+thread line, anchored on-chain via SPL Memo (a signed log with real Explorer links — honestly
+labeled: the freeze itself is buyer-side policy; the on-chain PDA state machine is the roadmap).
+
+The demo now shows all four: **trust working** (settled rounds), **trust broken but money safe**
+(refunded rounds), **trust never extended** (a `PEP blocked` round where no funds ever move), and
+**trust revoked** (a flagged seller frozen out of the market).
 
 ## Demo storyboard (≈3-minute video, two acts)
 
@@ -114,11 +122,19 @@ The demo now shows all three: **trust working** (settled rounds), **trust broken
    no Explorer link, buyer balance unmoved. Say the honest line out loud: *nothing settled, because
    nothing was allowed to* — the audit log is the evidence, not a transaction. Detection catches a
    cheater after the money moves; this stops it before. The money never left.
-8. **The pitch** (20s). "In two days of running this market we found six ways agent settlement
+8. **The market remembers** (10s, the reputation beat). Every terminal outcome updates the seller's
+   score (`REPUTATION` lines in the thread, anchored on-chain via SPL Memo — click a `memo ↗`
+   link). One strike (−3) flags the offender, and from the next round its bids are **dead on
+   arrival** — the dashboard stamps them "frozen out", and the buyer's log reads
+   `[rep] seller-rogue frozen out (score=-3, flagged) — bid ignored`. Refunds punish each incident;
+   reputation ends the relationship: the villains stop even wasting rounds, and the market is left
+   to the honest sellers.
+9. **The pitch** (20s). "In two days of running this market we found six ways agent settlement
    breaks — a squatted arbiter, unpayable wallets, colliding escrows, a refund path nobody wired.
-   Accountability can't be a promise; it has to be the protocol. Shipped: a code-enforced Egress
-   PEP (prevention) + verify-then-pay + deadline refunds (+ an opt-in neutral arbiter agent). Next:
-   own arbitration, slashing, reputation."
+   Accountability can't be a promise; it has to be the protocol. Shipped: prevention (a
+   code-enforced Egress PEP), verify-then-pay, deadline refunds, and reputation with an on-chain
+   memo trail — one strike and a cheater is frozen out (+ an opt-in neutral arbiter agent). Next:
+   own arbitration, slashing, a reputation PDA with bond scaling."
 
 **Close** (10s). Switch to the dashboard's **Follow the money** tab and play the rogue and hijack
 scenarios back to back — refund-after-deadline (money out, then safely back) and
@@ -223,9 +239,12 @@ Buyer wallet: `ByowCmt5bMKXL3t1Mj1rJiismnDgxbkNnHQn5cD9Hc3g` · Seller receive w
 ## Current limits (honest)
 
 - Buyer selection is a single LLM judgment over price + bid notes (it refused the pushy rogue for
-  9 rounds, then fell for the polished disguise) — explicit risk/reputation scoring that remembers
-  a counterparty's history is Phase 3. Today the rogue can win (and waste) round after round; it
-  never profits, but a reputation memory would stop awarding it at all.
+  9 rounds, then fell for the polished disguise). **The reputation memory now exists** (L3): one
+  strike and the offender's bids are dropped before the LLM ever sees them — the freeze is
+  code-enforced, not a prompt. What remains for later phases is *graduated* risk scoring (weighing
+  a marginal counterparty's price against its history rather than the current binary freeze) and
+  the on-chain reputation PDA with bond scaling; today's ledger is buyer-side with an SPL-Memo
+  on-chain trail (a signed log, honestly labeled — not yet a chain-readable state machine).
 - **No-delivery is now punished** (deadline refund) and **delivery content is now verified**
   (objective TxLINE re-exec before release; `DELIVER_MODE=junk` and `TXLINE_DELIVERY_MODE=bad_count`
   are the built-in attackers that exercise it). Verification covers the TxLINE adapter only;

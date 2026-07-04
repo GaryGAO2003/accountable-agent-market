@@ -6,7 +6,7 @@
  * never touches coral or Solana — this keeps the token server-side and avoids CORS.
  *
  *   GET /api/health                  → { ok: true }
- *   GET /api/feed?session=<sid>      → { session, rounds, updatedAt }   (session defaults to $SESSION)
+ *   GET /api/feed?session=<sid>      → { session, rounds, reputation, updatedAt }   (session defaults to $SESSION)
  *
  * Set FEED_FIXTURE=<path-to-recorded-extended-state.json> to serve a recorded transcript instead of
  * hitting coral — used by the e2e so it exercises the REAL fold/parse path with no devnet.
@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { foldRounds } from './foldRounds.js'
+import { foldRounds, reputationSummary } from './foldRounds.js'
 import { collectMessages } from './coralState.js'
 
 const MARKET_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..') // examples/marketplace
@@ -78,7 +78,7 @@ app.get('/api/feed', async (req, res) => {
   if (!FIXTURE && !session) return res.status(400).json({ error: 'no session — pass ?session=<id> or set SESSION' })
   try {
     const rounds = foldRounds(collectMessages(await readState(session)), SELLERS)
-    res.json({ session, rounds, updatedAt: new Date().toISOString() })
+    res.json({ session, rounds, reputation: reputationSummary(rounds), updatedAt: new Date().toISOString() })
   } catch (e) {
     res.status(502).json({ error: `feed failed: ${(e as Error).message}` })
   }

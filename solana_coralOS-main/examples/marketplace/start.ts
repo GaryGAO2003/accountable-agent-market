@@ -161,6 +161,11 @@ async function main() {
     // Egress PEP caps (optional overrides): velocity (money actions/min) + cumulative session budget in SOL.
     ...(env.BUYER_MAX_TX_PER_MIN ? { BUYER_MAX_TX_PER_MIN: f64(Number(env.BUYER_MAX_TX_PER_MIN)) } : {}),
     ...(env.BUYER_SESSION_BUDGET_SOL ? { BUYER_SESSION_BUDGET_SOL: f64(Number(env.BUYER_SESSION_BUDGET_SOL)) } : {}),
+    // L3 reputation (optional overrides): flag/trust score boundaries + the on-chain memo toggle. Defaults
+    // live in the agent (flag -3, trust 2, memo on), so these are only forwarded when set in .env.
+    ...(env.REP_FLAG_THRESHOLD ? { REP_FLAG_THRESHOLD: f64(Number(env.REP_FLAG_THRESHOLD)) } : {}),
+    ...(env.REP_TRUST_THRESHOLD ? { REP_TRUST_THRESHOLD: f64(Number(env.REP_TRUST_THRESHOLD)) } : {}),
+    ...(env.REP_MEMO ? { REP_MEMO: str(env.REP_MEMO) } : {}),
     BUYER_SERVICE: str(buyerService),
     BUYER_ARG: str(buyerArg),
     ...(buyerArgs ? { BUYER_ARGS: str(buyerArgs) } : {}),

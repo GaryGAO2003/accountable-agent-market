@@ -6,7 +6,7 @@
  */
 import {
   verb, messageRound, parseWant, parseBid, parseAward, parseEscrowRequired, parseDeposited,
-  parseDelivered, parseVerified, parseArbiterDecision, parseEgressDenied,
+  parseDelivered, parseVerified, parseArbiterDecision, parseEgressDenied, parseReputation,
 } from '@pay/agent-runtime'
 
 export interface RawMessage {
@@ -18,6 +18,9 @@ export interface RoundBid {
   by: string
   priceSol: number
   note?: string
+  /** L3: the seller's reputation tier AT THE MOMENT THIS BID FOLDED. A bid placed before its seller was
+   *  flagged reads 'neutral'; one placed after reads 'flagged' — an honest timeline. Defaults 'neutral'. */
+  sellerTier?: 'trusted' | 'neutral' | 'flagged'
 }
 
 export type RoundStatus = 'bidding' | 'awarded' | 'deposited' | 'delivered' | 'verified' | 'verification_failed' | 'settled' | 'refunded' | 'blocked'
@@ -38,6 +41,9 @@ export interface Round {
   refund?: { sig: string }
   /** An egress PEP refused an action for this round — no on-chain tx happened, so no sig/link exists. Terminal. */
   egress?: { code: string; action: string; by?: string }
+  /** L3: the seller-standing change the buyer emitted for this round. An annotation ONLY — it never changes
+   *  `status`. `sig`, when present, is a REAL devnet SPL-Memo tx anchoring the change (a memo trail). */
+  reputation?: { seller: string; score: number; tier: string; outcome: string; sig?: string }
   status: RoundStatus
 }
 
@@ -48,12 +54,17 @@ const tryJson = (s: string): unknown => {
 /** Optional `reason="…"` carried on an AWARD (the buyer's best-value justification). */
 const awardReason = (text: string): string | undefined => text.match(/reason="([^"]*)"/)?.[1]
 
+/** Narrow the parser's loose tier string to the bid's tier union; anything unknown/absent → 'neutral'. */
+const asTier = (t: string | undefined): NonNullable<RoundBid['sellerTier']> =>
+  t === 'trusted' || t === 'flagged' ? t : 'neutral'
+
 /**
  * Fold raw transcript messages into rounds (ascending). Pass the seller roster to compute which
  * sellers declined a round (self-selection) once its bidding has closed.
  */
 export function foldRounds(messages: RawMessage[], sellers: string[] = []): Round[] {
   const byRound = new Map<number, Round>()
+  const tierBySeller = new Map<string, string>() // L3 running standing, folded chronologically
   const get = (r: number): Round => {
     let round = byRound.get(r)
     if (!round) {
@@ -72,7 +83,7 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
     const bid = parseBid(text)
     if (bid) {
       const r = get(bid.round)
-      if (!r.bids.some((b) => b.by === bid.by)) r.bids.push({ by: bid.by, priceSol: bid.priceSol, note: bid.note })
+      if (!r.bids.some((b) => b.by === bid.by)) r.bids.push({ by: bid.by, priceSol: bid.priceSol, note: bid.note, sellerTier: asTier(tierBySeller.get(bid.by)) })
       continue
     }
 
@@ -120,6 +131,16 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
       continue
     }
 
+    // L3 reputation (annotation, NOT a settlement state): the buyer emits one standing update per round at
+    // its first terminal outcome. Update the running tier (so LATER bids fold flagged) and stamp the round;
+    // deliberately leave round.status untouched.
+    const rep = parseReputation(text)
+    if (rep) {
+      tierBySeller.set(rep.seller, rep.tier)
+      get(rep.round).reputation = { seller: rep.seller, score: rep.score, tier: rep.tier, outcome: rep.outcome, ...(rep.sig ? { sig: rep.sig } : {}) }
+      continue
+    }
+
     const v = verb(text)
     const r = messageRound(text)
     if ((v === 'RELEASED' || v === 'ARBITER_RELEASED') && r != null) {
@@ -147,4 +168,17 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
     round.declined = sellers.filter((s) => !round.bids.some((b) => b.by === s))
   }
   return rounds
+}
+
+/**
+ * L3: fold rounds into a per-seller standing table (last reputation update per seller wins) — the shape
+ * server.ts serves as the feed's `reputation` field, and the web strip renders. Order-independent: it
+ * sorts by round ascending so "last wins" means chronologically last regardless of input order.
+ */
+export function reputationSummary(rounds: Round[]): Record<string, { score: number; tier: string }> {
+  const summary: Record<string, { score: number; tier: string }> = {}
+  for (const round of [...rounds].sort((a, b) => a.round - b.round)) {
+    if (round.reputation) summary[round.reputation.seller] = { score: round.reputation.score, tier: round.reputation.tier }
+  }
+  return summary
 }

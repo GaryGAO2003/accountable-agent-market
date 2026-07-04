@@ -24,6 +24,9 @@ EXPECTED_SELLER_WALLET = { type = "string", default = "", description = "Egress 
 BUYER_MAX_SOL = { type = "f64", default = 0.001, description = "Budget cap per round (the WANT budget)" }
 BUYER_MAX_TX_PER_MIN = { type = "f64", default = 30, description = "Egress PEP velocity cap: max money actions (deposit/release/refund) per rolling 60s across all rounds (default 30 = well above the natural cadence; lower it to demo the throttle)" }
 BUYER_SESSION_BUDGET_SOL = { type = "f64", default = 0, description = "Egress PEP budget cap: cumulative deposit spend for the whole session in SOL (0 = no cap)" }
+REP_FLAG_THRESHOLD = { type = "f64", default = -3, description = "L3 reputation: score at/below which a seller is flagged and frozen out of future awards (inclusive). One fraud (-3) flags by default" }
+REP_TRUST_THRESHOLD = { type = "f64", default = 2, description = "L3 reputation: score at/above which a seller reads trusted (inclusive). One clean delivery (+2) earns trust by default" }
+REP_MEMO = { type = "string", default = "1", description = "L3 reputation: 1 (default) anchors each standing change on-chain via an SPL memo (~5k lamports/write); 0 keeps the trail thread-only (no memo fee)" }
 BUYER_SERVICE = { type = "string", default = "txline", description = "Service to shop for (sellers self-select on it)" }
 BUYER_ARG = { type = "string", default = "edge 18175397", description = "Argument passed to the winning seller's deliverService" }
 BUYER_ARGS = { type = "string", default = "", description = "Comma-separated args to rotate through, one per round (overrides BUYER_ARG)" }

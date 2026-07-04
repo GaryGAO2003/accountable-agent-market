@@ -20,3 +20,7 @@ export { checkEgress, commitEgress, newEgressState, AuditLog } from './egress.js
 export type {
   ReasonCode, EgressAction, EgressPolicy, EgressState, EgressDecision, AuditEntry,
 } from './egress.js'
+
+// Reputation ledger (L3) - the market's cross-round memory + its frozen wire line.
+export { ReputationLedger, REP_WEIGHTS, formatReputation, parseReputation } from './reputation.js'
+export type { RepOutcome, RepTier, RepThresholds, RepEntry } from './reputation.js'

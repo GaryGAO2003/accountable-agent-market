@@ -1,4 +1,4 @@
-import type { Round } from '../types'
+import { explorerTx, type Round } from '../types'
 import { StatusPill } from './StatusPill'
 import { BidRow, DeclinedRow } from './BidRow'
 import { SettlementBadge } from './SettlementBadge'
@@ -65,6 +65,25 @@ export function RoundCard({ round }: { round: Round }) {
           </>
         )}
       </footer>
+
+      {round.reputation && (
+        // L3 standing line — attributed to REPUTATION, not settlement. The memo link is a DIFFERENT devnet tx
+        // (the SPL-Memo standing log), so it can appear even on a blocked round without implying money moved.
+        <p className="rep-line" data-testid="reputation">
+          <span className="rep-line-label">reputation:</span>{' '}
+          <span className="rep-line-seller">{round.reputation.seller}</span> →{' '}
+          <span className={`rep-tier rep-tier-${round.reputation.tier}`}>{round.reputation.tier}</span>{' '}
+          (score {round.reputation.score})
+          {round.reputation.sig && (
+            <>
+              {' '}
+              <a className="rep-memo" data-testid="rep-memo" href={explorerTx(round.reputation.sig)} target="_blank" rel="noreferrer">
+                memo ↗
+              </a>
+            </>
+          )}
+        </p>
+      )}
     </article>
   )
 }

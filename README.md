@@ -84,6 +84,22 @@ honest about what it is: a block is not an on-chain transaction.** There is no s
 the proof is the audit line plus the deposit that never appears, set against a normal round's real
 Explorer link. Prevention leaves a *smaller* footprint than settlement, by design.
 
+### The memory layer — reputation (L3)
+
+Refunds and blocks are **per-incident**: the money comes back, the action is stopped — and the same
+seller is free to win the next auction and waste the next round. The reputation layer is the
+cross-round memory: every round's terminal outcome updates the seller's score (**+2** settled,
+**−3** refunded / blocked / failed verification — one fraud outweighs one good delivery), and a
+seller that hits the flag threshold is **frozen out**: the buyer drops its bids before awarding,
+forever. L1 gets the money back, L2 stops one action, **L3 stops the relationship** — one strike
+and the rogue never gets awarded again, so it can't even waste rounds.
+
+Each standing change is broadcast into the CoralOS thread (`REPUTATION seller=… score=… tier=…`)
+and — by default — **anchored on-chain via an SPL Memo transaction**, so the reputation trail has
+real Explorer links. Honest framing: the memo is an on-chain *log* of the standing change, signed
+by the buyer; the freeze itself is buyer-side policy. A reputation *state machine* (own program,
+PDA per seller, bonds scaling with standing) is the roadmap's next rung.
+
 ## Quick start
 
 Prereqs: Docker Desktop, Node ≥ 20, Git Bash on Windows. **Devnet only** — the runtime throws on a
@@ -135,6 +151,12 @@ reviewable commit on top:
   deposit/release/refund sites and the seller's TxLINE fetch. A blocked round emits `EGRESS_DENIED`
   to the thread and shows a violet **PEP blocked** badge on the dashboard (no fake Explorer link —
   a block isn't a tx). The `seller-hijack` persona (payout-wallet swap) drives the demo beat.
+- **The memory layer — reputation** (`packages/agent-runtime/src/market/reputation.ts`): per-seller
+  cumulative scoring (+2 settled / −3 refunded·blocked·verify-failed), tiers
+  (trusted/neutral/flagged), and the market-layer freeze — the buyer drops flagged sellers' bids
+  before awarding, so one strike ends the relationship. Standing changes broadcast as `REPUTATION`
+  thread lines and anchor on-chain via **SPL Memo** (`REP_MEMO=1` default); the dashboard shows
+  per-seller tiers, "frozen out" bid chips, and the memo trail's Explorer links.
 - Tests green throughout (see CI-style runs in the merge history): agent-runtime · buyer · seller ·
   arbiter · feed · web, plus typechecks everywhere.
 
@@ -142,7 +164,8 @@ reviewable commit on top:
 
 `jupiter_quote` second service → risk-adjusted buyer selection → broader verification adapters →
 watcher/challenger → arbiter agent → **own on-chain arbitration + slashing** (finding #3 makes the
-case) → reputation → full dashboard timeline.
+case) → reputation **PDA + bond scaling** (the off-chain ledger + Memo trail shipped; the on-chain
+state machine is next) → full dashboard timeline.
 
 ## Repo map
 

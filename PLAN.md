@@ -194,7 +194,13 @@ the session fixture. Freeze code by 19:00 for the video (deadline 22:59).
 **Stop-loss**: minimum shippable L2 = T1 + T2 + T4 + one README paragraph. Cut order: T3 →
 FlowView 4th scene.
 
-## L3 — Reputation (the market remembers) — ACTIVE 2026-07-04
+## L3 — Reputation (the market remembers) — SHIPPED 2026-07-04
+
+> **Status: SHIPPED** — R1 (runtime ledger + Memo trail), R2 (buyer freeze + recordOnce + memo),
+> R3 (feed folding + dashboard tiers/frozen-out chips/memo links) all landed. Gates:
+> agent-runtime 103, buyer 31, seller 22, feed 21, web 23 (200 total) + all typechecks. Live-run
+> artifacts (a session showing the rogue flagged then frozen out, with real memo txs) — batch with
+> the video recording.
 
 Source: `PROPOSAL.md` §3/§7 L3, minus ERC-8004 (CRITIQUE §4: dropped — a clean Solana reputation
 layer stands on its own). Scope decision for today: an **off-chain ledger that changes buyer
