@@ -9,19 +9,24 @@ Solana, no human in the loop.** Built on Solana × CoralOS for the UK AI Agent H
 
 ## What it does (verified live on devnet, 2026-07-03)
 
-One **buyer agent** broadcasts a need over a shared CoralOS thread. Four **LLM seller personas**
-— `seller-cheap` (low-price volume), `seller-honest` (fair price), `seller-premium`
-(high-confidence premium), and `seller-rogue` (**the villain**: wins bids, takes the escrow, never
-delivers) — each decide with an LLM whether and how much to bid, bounded by their cost floors. The
-buyer awards with a stated reason, locks payment in a **Solana escrow**, the winner delivers
-**real TxODDS World Cup data**, the buyer **re-executes the objective TxLINE read**, and the
-escrow **releases only after verification passes**. When the rogue wins and ghosts, the buyer
-waits out the on-chain deadline and **reclaims its funds with the escrow's refund instruction** —
-the round turns red on the dashboard with its own Explorer link. Every settlement hop is a real
-devnet transaction; a React dashboard folds the transcript into a live auction timeline.
+One **buyer agent** broadcasts a need over a shared CoralOS thread. **LLM seller personas** compete
+— three that play fair (`seller-cheap` low-price volume, `seller-honest` fair price,
+`seller-premium` high-confidence premium) and two built to attack settlement (`seller-rogue`: wins
+bids, takes the escrow, never delivers; `seller-hijack`: wins, then names a **foreign payout
+wallet** in its escrow terms). Each decides with an LLM whether and how much to bid, bounded by its
+cost floor. The buyer awards with a stated reason — but **every outbound payment first passes a
+code-enforced policy check (the Egress PEP)**, so it only ever deposits to the wallet it expects.
+It locks payment in a **Solana escrow**, the winner delivers **real TxODDS World Cup data**, the
+buyer **re-executes the objective TxLINE read**, and the escrow **releases only after verification
+passes**. When the rogue ghosts, the buyer waits out the on-chain deadline and **reclaims its funds
+with the escrow's refund instruction** (the round turns red with its own Explorer link). When the
+hijacker tries to redirect the payout, the PEP **refuses the deposit before any transaction is
+signed** — it wins the auction and earns nothing, and *no SOL moves at all*. Every settlement hop
+is a real devnet transaction; a React dashboard folds the transcript into a live auction timeline.
 
 ```
-WANT → 4 LLM bids (persona-priced) → AWARD + reason → escrow deposit → DELIVERED → VERIFIED → RELEASED
+                                                  ┌ Egress PEP: payout to an unexpected wallet? refused pre-flight — no tx, no funds moved
+WANT → LLM bids (persona-priced) → AWARD + reason ┴→ escrow deposit → DELIVERED → VERIFIED → RELEASED
                                                        └→ no delivery / failed verification → deadline → REFUNDED
 ```
 
@@ -60,6 +65,24 @@ diagnosed and fixed in this repo's history (details in [DEMO.md](DEMO.md)):
 That is the thesis: **agent markets fail in ways humans won't be watching for.** Settlement needs
 verification, self-owned arbitration, slashing, and reputation by construction — the
 [roadmap](PLAN.md) (verify-then-pay pipeline per [PROPOSAL.md](PROPOSAL.md)).
+
+### The prevention layer — an Egress PEP
+
+The six findings above are all *detection* — the market broke and we caught it after the fact.
+The other half is *prevention*: stopping a bad action **before** it happens. Every outbound agent
+action — a deposit, a release, a refund, an outbound HTTP call — now passes one code-enforced
+**Policy Enforcement Point** first ("the model proposes, code disposes"): a recipient allowlist,
+per-reference replay defense, a spend budget, a velocity cap, and an outbound-host allowlist, each
+denial tagged with a **reason code** and written to an audit trail. A prompt injection in fetched
+data, or a hijacked thread message, can *ask* the buyer to pay the wrong wallet — it cannot make
+it, because the deciding logic lives in code the prompt can't reach.
+
+The demo makes this visible with `seller-hijack`: it undercuts to win, then swaps a **foreign
+payout wallet** into its escrow terms. The buyer's PEP pins the expected wallet and refuses the
+deposit — `RECIPIENT_NOT_ALLOWED` — so the hijacker wins the auction and earns nothing. **This is
+honest about what it is: a block is not an on-chain transaction.** There is no signature to show;
+the proof is the audit line plus the deposit that never appears, set against a normal round's real
+Explorer link. Prevention leaves a *smaller* footprint than settlement, by design.
 
 ## Quick start
 
@@ -106,6 +129,12 @@ reviewable commit on top:
 - Opt-in `arbiter-agent` flow (`ARBITER_AGENT_ENABLED=1`): a neutral agent verifies and emits
   `ARBITER_VERIFIED` / `ARBITER_REJECTED`, then signs release/refund (on-chain half awaits our own
   arbiter deployment — finding #3).
+- **The prevention layer — a unified Egress PEP** (`packages/agent-runtime/src/market/egress.ts`):
+  one code-enforced policy check (recipient allowlist · reference replay · budget · velocity ·
+  outbound-host allowlist) with a reason-code taxonomy + audit log, wired at the buyer's
+  deposit/release/refund sites and the seller's TxLINE fetch. A blocked round emits `EGRESS_DENIED`
+  to the thread and shows a violet **PEP blocked** badge on the dashboard (no fake Explorer link —
+  a block isn't a tx). The `seller-hijack` persona (payout-wallet swap) drives the demo beat.
 - Tests green throughout (see CI-style runs in the merge history): agent-runtime · buyer · seller ·
   arbiter · feed · web, plus typechecks everywhere.
 

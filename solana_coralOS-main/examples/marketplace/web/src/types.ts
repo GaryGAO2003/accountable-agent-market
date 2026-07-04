@@ -7,7 +7,7 @@ export interface RoundBid {
   note?: string
 }
 
-export type RoundStatus = 'bidding' | 'awarded' | 'deposited' | 'delivered' | 'verified' | 'verification_failed' | 'settled' | 'refunded'
+export type RoundStatus = 'bidding' | 'awarded' | 'deposited' | 'delivered' | 'verified' | 'verification_failed' | 'settled' | 'refunded' | 'blocked'
 
 export interface Round {
   round: number
@@ -22,6 +22,8 @@ export interface Round {
   release?: { sig: string }
   refunded?: boolean
   refund?: { sig: string }
+  /** An egress PEP refused an action for this round — no on-chain tx happened, so no sig/link exists. */
+  egress?: { code: string; action: string; by?: string }
   status: RoundStatus
 }
 

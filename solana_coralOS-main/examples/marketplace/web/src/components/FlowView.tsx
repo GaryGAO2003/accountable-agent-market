@@ -17,7 +17,7 @@ const RELEASED_TX =
 const REFUNDED_TX =
   'https://explorer.solana.com/tx/4Gpytv3y98LHa5bPCuL8xSpmFCyctxzMPQXjva2GWUzpwiWnerPcfa3QDQ9ysCuWxsvrqZF6EDeGcXCs182nCiBQ?cluster=devnet'
 
-type Scenario = 'honest' | 'ghost' | 'fraud'
+type Scenario = 'honest' | 'ghost' | 'fraud' | 'hijack'
 /** One receipt line: parts render in order, `{ b }` parts in bold (colored by `cls`). */
 interface LogLine { cls: string; parts: Array<string | { b: string }> }
 
@@ -37,6 +37,8 @@ const L: Record<string, LogLine> = {
   waitF: { cls: 'lv-us', parts: ['bad data = no delivery — deadline hits, buyer signs ', { b: 'refund()' }] },
   rel: { cls: 'lv-rel', parts: [{ b: 'RELEASED' }, ' sig=3f6RvMv… — vault → seller wallet'] },
   ref: { cls: 'lv-ref', parts: [{ b: 'REFUNDED' }, ' sig=4Gpytv3… — vault → buyer wallet · rogue earned 0'] },
+  escHj: { cls: 'lv-x', parts: [{ b: 'ESCROW_REQUIRED' }, ' payout=9xF0…rEIGN — seller names a wallet that is not its market identity'] },
+  denyHj: { cls: 'lv-us', parts: [{ b: 'EGRESS_DENIED' }, ' code=RECIPIENT_NOT_ALLOWED action=deposit — payout not allow-listed; deposit refused, 0 SOL moved'] },
 }
 
 interface Badge { state: string; cls: string }
@@ -49,7 +51,7 @@ const IDLE = {
   bal: { buyer: '1.00000', vault: '0.00000', seller: '2.43100' },
   fly: { cls: '', text: '📦 DELIVERED —' },
   live: { dep: false, rel: false, ref: false },
-  verdict: null as 'paid' | 'back' | null,
+  verdict: null as 'paid' | 'back' | 'blocked' | null,
   sellerNote: 'delivers real TxODDS data… or tries not to',
   lines: [] as LogLine[],
 }
@@ -99,12 +101,30 @@ export function FlowView() {
     setS({ ...IDLE, scn: name })
     const honest = name === 'honest'
     const ghost = name === 'ghost'
+    const hijack = name === 'hijack'
     const amt = honest ? '0.0008' : '0.00025'
     let t = 0
 
     at(t, () => { patch({ chips: { want: 'on', bids: '', award: '' } }); put(L.want) }); t += STEP
     at(t, () => { patch({ chips: { want: 'on', bids: 'on', award: '' } }); put(L.bids) }); t += STEP
     at(t, () => { patch({ chips: { want: 'on', bids: 'on', award: 'won' } }); put(honest ? L.awardH : L.award) }); t += STEP
+
+    if (hijack) {
+      // The seller wins, then names a FOREIGN payout wallet. The buyer's PEP inspects the target and
+      // refuses the deposit: the coin never leaves home — nothing touches the vault or the chain. No
+      // balance moves (buyer stays at the full starting balance, vault 0, seller earns nothing), and
+      // there is deliberately no Explorer link because nothing settled on-chain (the honesty rule).
+      at(t, () => { patch({ fly: { cls: 'bad', text: '⚠ payout → foreign wallet' } }); put(L.escHj) }); t += STEP
+      at(t, () => { pulse('lock', 'refused ✕', 'bad'); put(L.denyHj) }); t += STEP
+      at(t, () => {
+        setS((prev) => ({
+          ...prev,
+          verdict: 'blocked',
+          sellerNote: 'won the auction — payout wallet refused, earned nothing',
+        }))
+      })
+      return
+    }
 
     at(t, () => { flyCoin('dep', 1100, `◉ ${amt}`); put(honest ? L.depH : L.dep) }); t += 1100
     at(t, () => {
@@ -168,6 +188,8 @@ export function FlowView() {
           data-testid="flow-scn-ghost" onClick={() => play('ghost')}>✕ rogue wins &amp; ghosts</button>
         <button className={`scn scn-fraud ${s.scn === 'fraud' ? 'on' : ''}`} type="button"
           data-testid="flow-scn-fraud" onClick={() => play('fraud')}>△ seller ships fake data</button>
+        <button className={`scn scn-hijack ${s.scn === 'hijack' ? 'on' : ''}`} type="button"
+          data-testid="flow-scn-hijack" onClick={() => play('hijack')}>🛡 seller swaps payout wallet</button>
       </div>
 
       <div className="canvas-scroll">
@@ -224,6 +246,10 @@ export function FlowView() {
             Money returned — cheater earned 0{' '}
             <a href={REFUNDED_TX} target="_blank" rel="noreferrer">REFUNDED ↗ real devnet tx</a>
           </div>
+          <div className={`verdict verdict-blocked ${s.verdict === 'blocked' ? 'show' : ''}`} data-testid="flow-verdict-blocked">
+            🛡 PEP blocked · RECIPIENT_NOT_ALLOWED
+            <span className="verdict-note">deposit refused — nothing moved, nothing settled on-chain</span>
+          </div>
         </div>
       </div>
 
@@ -242,13 +268,15 @@ export function FlowView() {
 
       <div className="flow-legend">
         <span className="key"><span className="sw sw-gray" /> negotiation — free, no funds move</span>
-        <span className="key"><span className="sw sw-violet" /> our software holds &amp; checks</span>
+        <span className="key"><span className="sw sw-violet" /> our software holds, checks &amp; refuses bad payouts</span>
         <span className="key"><span className="sw sw-mint" /> released to the seller</span>
         <span className="key"><span className="sw sw-coral" /> refunded to the buyer</span>
       </div>
 
-      <p className="punch">A rogue can win the auction — it still earns nothing. <b>Cheating costs the cheater,
-      never the buyer</b> — every hop above is a real Solana devnet transaction.</p>
+      <p className="punch">A seller can win the auction and still earn nothing — by ghosting, shipping fake
+      data, or swapping in a foreign payout wallet. The first two refund on-chain; the last never deposits
+      at all — our policy check stops it before a single lamport moves. <b>Cheating costs the cheater,
+      never the buyer.</b></p>
     </section>
   )
 }

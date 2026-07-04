@@ -44,4 +44,20 @@ export const refundedRound: Round = {
   status: 'refunded',
 }
 
-export const fixtureRounds: Round[] = [settledRound, biddingRound, refundedRound]
+/** A PEP-blocked round — the winner named a foreign payout wallet, so the buyer's egress fence refused
+ *  the deposit. No deposit tx was ever sent: no deposit/release/refund sig, nothing settled on-chain. */
+export const blockedRound: Round = {
+  round: 4,
+  want: { service: 'txline', arg: 'fixtures', budgetSol: 0.001 },
+  bids: [
+    { by: 'seller-hijack', priceSol: 0.0002, note: 'undercut' },
+    { by: 'seller-honest', priceSol: 0.0007, note: 'verified' },
+  ],
+  declined: [],
+  award: { to: 'seller-hijack', reason: 'lowest bid for a simple lookup' },
+  escrow: { reference: 'HJK9', seller: 'F0reignWa11et', amountSol: 0.0002, deadlineSecs: 600 },
+  egress: { code: 'RECIPIENT_NOT_ALLOWED', action: 'deposit', by: 'buyer-agent' },
+  status: 'blocked',
+}
+
+export const fixtureRounds: Round[] = [settledRound, biddingRound, refundedRound, blockedRound]

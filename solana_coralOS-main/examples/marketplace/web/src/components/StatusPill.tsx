@@ -9,6 +9,7 @@ const LABEL: Record<RoundStatus, string> = {
   verification_failed: 'verify failed',
   settled: 'settled',
   refunded: 'refunded',
+  blocked: 'blocked',
 }
 
 export function StatusPill({ status }: { status: RoundStatus }) {

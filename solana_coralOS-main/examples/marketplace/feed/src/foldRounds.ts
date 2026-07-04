@@ -6,7 +6,7 @@
  */
 import {
   verb, messageRound, parseWant, parseBid, parseAward, parseEscrowRequired, parseDeposited,
-  parseDelivered, parseVerified, parseArbiterDecision,
+  parseDelivered, parseVerified, parseArbiterDecision, parseEgressDenied,
 } from '@pay/agent-runtime'
 
 export interface RawMessage {
@@ -20,7 +20,7 @@ export interface RoundBid {
   note?: string
 }
 
-export type RoundStatus = 'bidding' | 'awarded' | 'deposited' | 'delivered' | 'verified' | 'verification_failed' | 'settled' | 'refunded'
+export type RoundStatus = 'bidding' | 'awarded' | 'deposited' | 'delivered' | 'verified' | 'verification_failed' | 'settled' | 'refunded' | 'blocked'
 
 export interface Round {
   round: number
@@ -36,6 +36,8 @@ export interface Round {
   release?: { sig: string }
   refunded?: boolean
   refund?: { sig: string }
+  /** An egress PEP refused an action for this round — no on-chain tx happened, so no sig/link exists. Terminal. */
+  egress?: { code: string; action: string; by?: string }
   status: RoundStatus
 }
 
@@ -81,14 +83,14 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
     if (esc) { get(esc.round).escrow = { reference: esc.reference, seller: esc.seller, amountSol: esc.amountSol, deadlineSecs: esc.deadlineSecs }; continue }
 
     const dep = parseDeposited(text)
-    if (dep) { const r = get(dep.round); r.deposit = { sig: dep.sig, buyer: dep.buyer }; if (r.status !== 'settled') r.status = 'deposited'; continue }
+    if (dep) { const r = get(dep.round); r.deposit = { sig: dep.sig, buyer: dep.buyer }; if (r.status !== 'settled' && r.status !== 'blocked') r.status = 'deposited'; continue }
 
     const delivered = parseDelivered(text)
     if (delivered) {
       const round = get(delivered.round)
       const raw = delivered.raw
       round.delivered = { raw, data: tryJson(raw) }
-      if (round.status !== 'settled') round.status = 'delivered'
+      if (round.status !== 'settled' && round.status !== 'blocked') round.status = 'delivered'
       continue
     }
 
@@ -96,7 +98,7 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
     if (verified) {
       const round = get(verified.round)
       round.verification = { ok: verified.ok, code: verified.code, reason: verified.reason }
-      if (round.status !== 'settled') round.status = verified.ok ? 'verified' : 'verification_failed'
+      if (round.status !== 'settled' && round.status !== 'blocked') round.status = verified.ok ? 'verified' : 'verification_failed'
       continue
     }
 
@@ -104,7 +106,17 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
     if (arbiterDecision) {
       const round = get(arbiterDecision.round)
       round.verification = { ok: arbiterDecision.ok, code: arbiterDecision.code, reason: arbiterDecision.reason }
-      if (round.status !== 'settled') round.status = arbiterDecision.ok ? 'verified' : 'verification_failed'
+      if (round.status !== 'settled' && round.status !== 'blocked') round.status = arbiterDecision.ok ? 'verified' : 'verification_failed'
+      continue
+    }
+
+    // Egress PEP refusal (frozen wire line): the buyer's code-enforced fence stopped an action before
+    // it left the agent. No on-chain tx happened, so 'blocked' is terminal — later verbs can't settle it.
+    const egress = parseEgressDenied(text)
+    if (egress) {
+      const round = get(egress.round)
+      round.egress = { code: egress.code, action: egress.action, by: m.sender }
+      round.status = 'blocked'
       continue
     }
 
@@ -112,15 +124,19 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
     const r = messageRound(text)
     if ((v === 'RELEASED' || v === 'ARBITER_RELEASED') && r != null) {
       const round = get(r)
-      const sig = text.match(/sig=(\S+)/)?.[1]
-      if (sig) round.release = { sig }
-      round.status = 'settled'
+      if (round.status !== 'blocked') { // a blocked round never settles on-chain
+        const sig = text.match(/sig=(\S+)/)?.[1]
+        if (sig) round.release = { sig }
+        round.status = 'settled'
+      }
     } else if ((v === 'REFUNDED' || v === 'ARBITER_REFUNDED') && r != null) {
       const round = get(r)
-      const sig = text.match(/sig=(\S+)/)?.[1]
-      if (sig) round.refund = { sig }
-      round.refunded = true
-      round.status = 'refunded'
+      if (round.status !== 'blocked') {
+        const sig = text.match(/sig=(\S+)/)?.[1]
+        if (sig) round.refund = { sig }
+        round.refunded = true
+        round.status = 'refunded'
+      }
     }
   }
 

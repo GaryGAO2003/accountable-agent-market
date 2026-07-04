@@ -11,6 +11,7 @@ export function Explainer() {
         <li><b>WANT</b> — the buyer asks for one World Cup fixture's edge</li>
         <li><b>bid / decline</b> — only the specialist carries <code>txline</code>; the generalists sit out (<em>not in inventory</em>)</li>
         <li><b>award → deposit</b> — the winning bid's price is locked in escrow on devnet</li>
+        <li><b>prevent</b> — every deposit clears a code-enforced policy check first; a seller that swaps in a foreign payout wallet is refused <em>before</em> any funds move (no tx at all)</li>
         <li><b>deliver</b> — the seller fetches verified de-margined odds and an LLM value call</li>
         <li><b>verify → release</b> — the buyer re-executes the read before escrow pays; no delivery or bad data refunds by deadline (all steps link to the Explorer)</li>
       </ol>

@@ -125,6 +125,34 @@ describe('foldRounds', () => {
     expect(round.status).toBe('refunded')
   })
 
+  it('folds an EGRESS_DENIED line to a terminal blocked round (no deposit, no settlement)', () => {
+    const [r] = foldRounds([
+      { sender: 'buyer-agent', text: 'WANT round=1 service=txline arg=fixtures budget=0.001' },
+      { sender: 'seller-hijack', text: 'BID round=1 price=0.0002 by=seller-hijack note=undercut' },
+      { sender: 'buyer-agent', text: 'AWARD round=1 to=seller-hijack reason="lowest bid"' },
+      { sender: 'seller-hijack', text: 'ESCROW_REQUIRED round=1 reference=HJK9 seller=F0reignWa11et amount=0.0002 deadline=600' },
+      { sender: 'buyer-agent', text: 'EGRESS_DENIED round=1 code=RECIPIENT_NOT_ALLOWED action=deposit detail=payout wallet F0reignWa11et not in allow-list' },
+    ], sellers)
+    expect(r.status).toBe('blocked')
+    expect(r.egress).toEqual({ code: 'RECIPIENT_NOT_ALLOWED', action: 'deposit', by: 'buyer-agent' })
+    // blocked is terminal: the buyer never deposited and nothing settled on-chain
+    expect(r.deposit).toBeUndefined()
+    expect(r.release).toBeUndefined()
+    expect(r.refund).toBeUndefined()
+    expect(r.refunded).toBeUndefined()
+  })
+
+  it('keeps a round blocked even if a stray settlement verb arrives afterward', () => {
+    const [r] = foldRounds([
+      { sender: 'buyer-agent', text: 'WANT round=1 service=txline arg=fixtures budget=0.001' },
+      { sender: 'buyer-agent', text: 'AWARD round=1 to=seller-hijack' },
+      { sender: 'buyer-agent', text: 'EGRESS_DENIED round=1 code=RECIPIENT_NOT_ALLOWED action=deposit detail=foreign wallet' },
+      { sender: 'buyer-agent', text: 'RELEASED round=1 sig=SHOULD_NOT_APPLY' },
+    ], sellers)
+    expect(r.status).toBe('blocked')
+    expect(r.release).toBeUndefined()
+  })
+
   it('separates interleaved rounds and sorts ascending', () => {
     const msgs: RawMessage[] = [
       { sender: 'b', text: 'WANT round=2 service=s arg=a budget=0.001' },

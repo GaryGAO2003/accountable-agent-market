@@ -117,7 +117,13 @@ changes there were lost; only the doc reached the Test branch), `coral_info.txt`
 - Working model per version: coder agents implement from written specs; every change lands with tests;
   verified centrally before commit.
 
-## L2 — Egress PEP (prevent layer) — ACTIVE 2026-07-04, two parallel parts
+## L2 — Egress PEP (prevent layer) — SHIPPED 2026-07-04, both parts landed
+
+> **Status: SHIPPED** — Part A (Enforce) commit `09a2760`; Part B (Evidence: feed/dashboard +
+> bilingual docs) landed on top. All gates green: agent-runtime 77, buyer 23, seller 22, feed 16,
+> web 15, all typechecks + both manifests parse. Integration gate (a live devnet session showing the
+> hijacker blocked pre-deposit) is the only remaining step — batch it with the video recording, since
+> a block leaves an audit log, not a tx artifact.
 
 Source: `PROPOSAL.md` §3/§7 — L2 = every outbound action passes a unified **Egress PEP**
 (allowlist · budget · velocity · replay-nonce · schema · integrity hash) + **audit log** +

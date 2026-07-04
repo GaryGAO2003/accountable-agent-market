@@ -48,11 +48,22 @@ export function RoundCard({ round }: { round: Round }) {
       )}
 
       <footer className="settle-row">
-        {round.deposit && <SettlementBadge label={`deposit ${round.escrow?.amountSol ?? ''} SOL`} sig={round.deposit.sig} />}
-        {round.release && <SettlementBadge label="release" sig={round.release.sig} />}
-        {round.refund?.sig
-          ? <SettlementBadge label="refund" sig={round.refund.sig} className="settle-refund" />
-          : round.refunded && <span className="settle settle-refund" data-testid="refund">refunded</span>}
+        {round.status === 'blocked' || round.egress ? (
+          // Our PEP stopped this round before any tx — no signature, no Explorer link, no funds moved.
+          <div className="blocked-badge" data-testid="blocked">
+            <span className="blocked-tag">🛡 PEP blocked</span>
+            {round.egress?.code && <code className="blocked-code">{round.egress.code}</code>}
+            <span className="blocked-note">blocked before deposit — no funds moved</span>
+          </div>
+        ) : (
+          <>
+            {round.deposit && <SettlementBadge label={`deposit ${round.escrow?.amountSol ?? ''} SOL`} sig={round.deposit.sig} />}
+            {round.release && <SettlementBadge label="release" sig={round.release.sig} />}
+            {round.refund?.sig
+              ? <SettlementBadge label="refund" sig={round.refund.sig} className="settle-refund" />
+              : round.refunded && <span className="settle settle-refund" data-testid="refund">refunded</span>}
+          </>
+        )}
       </footer>
     </article>
   )
