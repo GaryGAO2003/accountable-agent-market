@@ -60,4 +60,23 @@ describe('FlowView', () => {
     expect(within(screen.getByTestId('flow-verdict-blocked')).queryByRole('link')).toBeNull()
     expect(screen.getByTestId('flow-verdict-paid').className).not.toContain('show')
   })
+
+  it('hijack scenario renders the Egress PEP panel: six checks, recipient fails, DENIED + code taxonomy', () => {
+    render(<FlowView />)
+    fireEvent.click(screen.getByTestId('flow-scn-hijack'))
+    // the policy-engine centerpiece is present only in this scenario
+    const panel = screen.getByTestId('flow-pep-panel')
+    const txt = panel.textContent ?? ''
+    // the reason code that fires, plus another from the taxonomy — this is one of a whole set of checks
+    expect(txt).toContain('RECIPIENT_NOT_ALLOWED')
+    expect(within(screen.getByTestId('flow-pep-taxonomy')).getByText('BUDGET_EXCEEDED')).toBeTruthy()
+    // multi-dimensional inspection: the recipient row fails, budget + velocity are among the passing checks
+    expect(screen.getByTestId('flow-pep-check-recipient')).toBeTruthy()
+    expect(txt).toContain('recipient')
+    expect(txt).toContain('budget')
+    expect(txt).toContain('velocity')
+    // still a policy block, not a tx: no Explorer link in the blocked verdict, buyer keeps the full balance
+    expect(within(screen.getByTestId('flow-verdict-blocked')).queryByRole('link')).toBeNull()
+    expect(screen.getByTestId('flow-bal-buyer').textContent).toBe('1.00000')
+  })
 })

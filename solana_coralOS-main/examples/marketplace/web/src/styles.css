@@ -222,3 +222,45 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .sw-violet { background: var(--violet); } .sw-gray { background: #cdd6e2; }
 .punch { margin: 14px 2px 0; font-size: 13px; border-top: 1px solid var(--line); padding-top: 13px; color: var(--ink); }
 .punch b { color: var(--coral); }
+
+/* ═══ Egress PEP inspection panel — the L2 policy engine (hijack scenario only) ═══
+   A code-enforced firewall every outbound action passes through: it inspects one deposit against many
+   independent checks and refuses on any failure. Deliberately reads as a console, NOT an auction card —
+   violet = "our software", mono type throughout, the failing row in coral, passing rows in mint. */
+.pep-overlay { position: absolute; inset: 0; z-index: 5; display: flex; align-items: center;
+  justify-content: center; padding: 8px; background: rgba(246, 248, 251, .52); }
+.pep-console { width: min(540px, 96%); max-height: 100%; overflow: hidden; background: var(--card);
+  border: 1.5px solid var(--violet); border-radius: 14px; font-family: var(--mono);
+  box-shadow: 0 0 0 5px var(--violet-tint), var(--shadow); }
+.pep-head { display: flex; align-items: center; gap: 9px; background: var(--violet); color: #fff;
+  padding: 7px 14px; font-size: 11px; }
+.pep-badge { font-weight: 700; letter-spacing: .07em; white-space: nowrap; }
+.pep-head-txt { opacity: .92; letter-spacing: .01em; }
+.pep-subject { padding: 8px 16px 6px; font-size: 11.5px; color: var(--dim); border-bottom: 1px dashed var(--line); }
+.pep-subject b { color: var(--ink); font-weight: 700; }
+.pep-foreign { color: var(--coral); font-weight: 700; }
+.pep-checks { display: flex; flex-direction: column; padding: 4px 16px; }
+.pep-check { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 12px;
+  border-bottom: 1px solid #f0f2f7; animation: pep-reveal .3s ease both; }
+.pep-check:last-child { border-bottom: 0; }
+.pep-mark { width: 15px; text-align: center; font-weight: 700; }
+.pep-check.ok .pep-mark { color: var(--mint); }
+.pep-check.ok .pep-label { color: var(--ink); }
+.pep-check.bad .pep-mark { color: var(--coral); }
+.pep-check.bad .pep-label { color: var(--coral); font-weight: 700; }
+.pep-detail { margin-left: auto; color: var(--dim); font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+.pep-check.bad .pep-detail { color: var(--coral); }
+.pep-verdict { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 16px 4px;
+  padding: 8px 12px; background: var(--coral-tint); border: 1px solid #f4cfc7; border-radius: 10px; }
+.pep-stamp { font-weight: 700; color: var(--coral); font-size: 13px; letter-spacing: .04em; }
+.pep-code { font-weight: 700; color: var(--coral); font-size: 12px; }
+.pep-moved { margin-left: auto; color: var(--dim); font-size: 11px; }
+.pep-taxonomy { padding: 9px 16px 12px; margin-top: 6px; border-top: 1px dashed var(--line); background: #fbfaff; }
+.pep-tax-label { font-size: 9px; letter-spacing: .13em; color: var(--dim); font-weight: 700; text-transform: uppercase; }
+.pep-tax-codes { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.pep-tax-code { font-size: 9px; color: var(--dim); border: 1px solid var(--line); border-radius: 6px;
+  padding: 2px 6px; background: var(--card); letter-spacing: .02em; }
+.pep-tax-code.active { color: #fff; background: var(--violet); border-color: var(--violet);
+  font-weight: 700; box-shadow: 0 0 0 3px var(--violet-tint); }
+@keyframes pep-reveal { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .pep-check { animation: none; } }
