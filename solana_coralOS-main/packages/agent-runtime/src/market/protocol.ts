@@ -13,12 +13,15 @@
  *   DELIVERED round=<n> <json>                                  seller -> buyer
  *   VERIFIED round=<n> ok=1 code=<code> reason="<why>"           buyer  -> market
  *   VERIFICATION_FAILED round=<n> ok=0 code=<code> reason="<why>" buyer -> market
- *   ARBITER_REVIEW round=<n> service=<name> arg="<arg>" reference=<R> seller=<addr> payer=<addr> delivery=<json>
+ *   BOND_POSTED round=<n> seller=<addr> holder=<addr> amount=<sol> sig=<sig>
+ *   CHALLENGE_REVIEW round=<n> service=<name> arg="<arg>" delivery=<json>
+ *   CHALLENGE_OPENED round=<n> by=<agent> reason="<why>" [challenger=<addr>] [bondSig=<sig>]
+ *   ARBITER_REVIEW round=<n> service=<name> arg="<arg>" reference=<R> seller=<addr> payer=<addr> [challenger=<addr>] delivery=<json>
  *   ARBITER_VERIFIED / ARBITER_REJECTED round=<n> ok=<1|0> code=<code> reason="<why>"
+ *   CHALLENGE_UPHELD / CHALLENGE_REJECTED round=<n> code=<code> reason="<why>"
+ *   SLASHED / ARBITER_SLASHED round=<n> sig=<sig> amount=<sol> from=<addr> to=<addr> [bond=seller|challenger]
  *   (then RELEASED / REFUNDED reuse the round tag)
- *   EGRESS_DENIED round=<n> code=<CODE> action=<deposit|release|refund|http> detail=<free text>  agent -> market/dashboard
  */
-import type { ReasonCode } from './egress.js'
 
 export interface Want {
   round: number
@@ -76,6 +79,7 @@ export interface ArbiterReview {
   reference: string
   seller: string
   payer: string
+  challenger?: string
   raw: string
 }
 
@@ -84,6 +88,47 @@ export interface ArbiterDecision {
   ok: boolean
   code: string
   reason: string
+}
+
+export interface BondPosted {
+  round: number
+  seller: string
+  holder: string
+  amountSol: number
+  sig: string
+}
+
+export interface ChallengeReview {
+  round: number
+  service: string
+  arg: string
+  raw: string
+}
+
+export interface ChallengeOpened {
+  round: number
+  by: string
+  reason: string
+  challenger?: string
+  bondSig?: string
+}
+
+export interface ChallengeDecision {
+  round: number
+  upheld: boolean
+  code: string
+  reason: string
+}
+
+export interface Slash {
+  round: number
+  sig: string
+  amountSol?: number
+  from?: string
+  to?: string
+  bond?: 'seller' | 'challenger'
+  settlement?: 'transfer' | 'arbiter'
+  arbiter?: boolean
 }
 
 const num = (text: string, key: string): number | undefined => {
@@ -227,7 +272,8 @@ export function parseVerified(text: string): Verification | null {
 
 // -- ARBITER_REVIEW / ARBITER_VERIFIED / ARBITER_REJECTED -----------------------
 export function formatArbiterReview(r: ArbiterReview): string {
-  return `ARBITER_REVIEW round=${r.round} service=${r.service} arg="${cleanQuote(r.arg)}" reference=${r.reference} seller=${r.seller} payer=${r.payer} delivery=${r.raw}`
+  const challenger = r.challenger ? ` challenger=${r.challenger}` : ''
+  return `ARBITER_REVIEW round=${r.round} service=${r.service} arg="${cleanQuote(r.arg)}" reference=${r.reference} seller=${r.seller} payer=${r.payer}${challenger} delivery=${r.raw}`
 }
 export function parseArbiterReview(text: string): ArbiterReview | null {
   if (verb(text) !== 'ARBITER_REVIEW') return null
@@ -237,9 +283,10 @@ export function parseArbiterReview(text: string): ArbiterReview | null {
   const reference = tok(text, 'reference')
   const seller = tok(text, 'seller')
   const payer = tok(text, 'payer')
+  const challenger = tok(text, 'challenger')
   const raw = text.match(/\sdelivery=(.+)$/)?.[1]?.trim()
   if (round == null || !service || arg == null || !reference || !seller || !payer || raw == null) return null
-  return { round, service, arg, reference, seller, payer, raw }
+  return { round, service, arg, reference, seller, payer, ...(challenger ? { challenger } : {}), raw }
 }
 
 export function formatArbiterDecision(d: ArbiterDecision): string {
@@ -257,25 +304,98 @@ export function parseArbiterDecision(text: string): ArbiterDecision | null {
   return { round, ok: okTok === '1' || v === 'ARBITER_VERIFIED', code, reason }
 }
 
-// -- EGRESS_DENIED ---------------------------------------------------------------
-/**
- * Surface an egress refusal onto the shared thread so the dashboard can show *why* an agent held back.
- * The line is **frozen** - the live feed regexes it - so `code` and `action` stay single tokens and the
- * free-text `detail` runs to end of line (it is the last field for exactly that reason). `action` is the
- * bare action kind (`deposit|release|refund|transfer|http`), `code` any `ReasonCode` (including the
- * caller-emitted reserved ones like SCHEMA_INVALID / INTEGRITY_MISMATCH).
- */
-export function formatEgressDenied(round: number, code: ReasonCode, action: string, detail: string): string {
-  return `EGRESS_DENIED round=${round} code=${code} action=${action} detail=${detail}`
+// -- L1 accountability: bonds, challenges, slashing -----------------------------
+export function formatChallengeReview(r: ChallengeReview): string {
+  return `CHALLENGE_REVIEW round=${r.round} service=${r.service} arg="${cleanQuote(r.arg)}" delivery=${r.raw}`
 }
-export function parseEgressDenied(text: string): { round: number; code: string; action: string; detail: string } | null {
-  if (verb(text) !== 'EGRESS_DENIED') return null
+export function parseChallengeReview(text: string): ChallengeReview | null {
+  if (verb(text) !== 'CHALLENGE_REVIEW') return null
+  const round = num(text, 'round')
+  const service = tok(text, 'service')
+  const arg = quoted(text, 'arg')
+  const raw = text.match(/\sdelivery=(.+)$/)?.[1]?.trim()
+  if (round == null || !service || arg == null || raw == null) return null
+  return { round, service, arg, raw }
+}
+
+export function formatBondPosted(b: BondPosted): string {
+  return `BOND_POSTED round=${b.round} seller=${b.seller} holder=${b.holder} amount=${b.amountSol} sig=${b.sig}`
+}
+export function parseBondPosted(text: string): BondPosted | null {
+  if (verb(text) !== 'BOND_POSTED') return null
+  const round = num(text, 'round')
+  const seller = tok(text, 'seller')
+  const holder = tok(text, 'holder')
+  const amountSol = num(text, 'amount')
+  const sig = tok(text, 'sig')
+  if (round == null || !seller || !holder || amountSol == null || !sig) return null
+  return { round, seller, holder, amountSol, sig }
+}
+
+export function formatChallengeOpened(c: ChallengeOpened): string {
+  const base = `CHALLENGE_OPENED round=${c.round} by=${c.by} reason="${cleanQuote(c.reason)}"`
+  return [
+    base,
+    ...(c.challenger ? [`challenger=${c.challenger}`] : []),
+    ...(c.bondSig ? [`bondSig=${c.bondSig}`] : []),
+  ].join(' ')
+}
+export function parseChallengeOpened(text: string): ChallengeOpened | null {
+  if (verb(text) !== 'CHALLENGE_OPENED') return null
+  const round = num(text, 'round')
+  const by = tok(text, 'by')
+  const reason = quoted(text, 'reason') ?? ''
+  const challenger = tok(text, 'challenger')
+  const bondSig = tok(text, 'bondSig')
+  if (round == null || !by) return null
+  return { round, by, reason, ...(challenger ? { challenger } : {}), ...(bondSig ? { bondSig } : {}) }
+}
+
+export function formatChallengeDecision(d: ChallengeDecision): string {
+  const v = d.upheld ? 'CHALLENGE_UPHELD' : 'CHALLENGE_REJECTED'
+  return `${v} round=${d.round} code=${d.code} reason="${cleanQuote(d.reason)}"`
+}
+export function parseChallengeDecision(text: string): ChallengeDecision | null {
+  const v = verb(text)
+  if (v !== 'CHALLENGE_UPHELD' && v !== 'CHALLENGE_REJECTED') return null
   const round = num(text, 'round')
   const code = tok(text, 'code')
-  const action = tok(text, 'action')
-  if (round == null || !code || !action) return null
-  const detail = text.match(/\sdetail=(.*)$/)?.[1] ?? '' // free text, to end of line
-  return { round, code, action, detail }
+  const reason = quoted(text, 'reason') ?? ''
+  if (round == null || !code) return null
+  return { round, upheld: v === 'CHALLENGE_UPHELD', code, reason }
+}
+
+export function formatSlash(s: Slash): string {
+  const v = s.arbiter ? 'ARBITER_SLASHED' : 'SLASHED'
+  const parts = [`${v} round=${s.round}`, `sig=${s.sig}`]
+  if (s.amountSol != null) parts.push(`amount=${s.amountSol}`)
+  if (s.from) parts.push(`from=${s.from}`)
+  if (s.to) parts.push(`to=${s.to}`)
+  if (s.bond) parts.push(`bond=${s.bond}`)
+  if (s.settlement) parts.push(`settlement=${s.settlement}`)
+  return parts.join(' ')
+}
+export function parseSlash(text: string): Slash | null {
+  const v = verb(text)
+  if (v !== 'SLASHED' && v !== 'ARBITER_SLASHED') return null
+  const round = num(text, 'round')
+  const sig = tok(text, 'sig')
+  if (round == null || !sig) return null
+  const amountSol = num(text, 'amount')
+  const from = tok(text, 'from')
+  const to = tok(text, 'to')
+  const bond = tok(text, 'bond')
+  const settlement = tok(text, 'settlement')
+  return {
+    round,
+    sig,
+    ...(amountSol == null ? {} : { amountSol }),
+    ...(from ? { from } : {}),
+    ...(to ? { to } : {}),
+    ...(bond === 'seller' || bond === 'challenger' ? { bond } : {}),
+    ...(settlement === 'transfer' || settlement === 'arbiter' ? { settlement } : {}),
+    ...(v === 'ARBITER_SLASHED' ? { arbiter: true } : {}),
+  }
 }
 
 // -- selection -------------------------------------------------------------------

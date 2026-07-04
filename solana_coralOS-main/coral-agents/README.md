@@ -7,6 +7,7 @@ CoralOS MCP session through `startCoralAgent` and trades in a shared market thre
 | Agent | Role |
 |---|---|
 | `buyer-agent` | Broadcasts `WANT`, collects competing bids, awards best value, opens arbiter escrow, and either verifies/releases itself or delegates to `arbiter-agent`. |
+| `challenger-agent` | Independent L1 challenger: receives `CHALLENGE_REVIEW`, re-executes objective evidence, posts a challenger bond, and emits `CHALLENGE_OPENED` when delivery deviates. |
 | `arbiter-agent` | Neutral verifier: consumes `ARBITER_REVIEW`, re-executes the TxLINE predicate, emits `ARBITER_VERIFIED` / `ARBITER_REJECTED`, and signs release/refund. |
 | `seller-agent` | TxODDS fulfillment image: bids on `txline`, verifies the funded escrow, and delivers the read. |
 | `seller-worldcup` | Config persona reusing `seller-agent:0.1.0`; the World Cup specialist for the single-round TxODDS example (`examples/txodds/coral`). |

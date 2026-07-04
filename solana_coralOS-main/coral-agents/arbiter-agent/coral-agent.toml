@@ -18,6 +18,8 @@ SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL 
 TXLINE_API_KEY = { type = "string", default = "", description = "Activated TxLINE API token for objective re-exec" }
 TXLINE_BASE_URL = { type = "string", default = "", description = "Override the TxLINE host" }
 ARBITER_REFUND_ON_REJECT = { type = "string", default = "", description = "Set to 1 to attempt arbitrate_refund after ARBITER_REJECTED; escrow deadline still applies" }
+SELLER_BOND_SOL = { type = "f64", default = 0.0001, description = "Seller bond amount to slash to the challenger when objective re-exec rejects delivery" }
+CHALLENGER_BOND_SOL = { type = "f64", default = 0.0001, description = "Challenger bond amount to slash to the seller when a challenge is rejected" }
 TRACE = { type = "string", default = "", description = "Set to 1 to log review details + Explorer links" }
 
 [runtimes.docker]

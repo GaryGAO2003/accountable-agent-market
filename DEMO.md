@@ -37,11 +37,12 @@ operation we hit, diagnosed, and fixed:
 2. **The buyer that crashed silently** — arbiter settlement (the default) needs an arbiter key the
    launcher never forwarded; the buyer container died at boot and sellers waited forever on a
    market with no buyer. (Fixed: forward `ARBITER_KEYPAIR_B58`.)
-3. **The arbiter that can never be yours** — the deployed devnet arbiter program has a
+3. **The arbiter that can never be yours** — the public devnet arbiter program has a
    **first-come global config**: whoever initialized it first is *the* arbiter forever. Every fork
    of this kit silently fails `NotArbiter` on release. 19 of our rounds delivered and then stalled;
-   the deposits are locked behind someone else's key. (Mitigated: `SETTLEMENT_MODE=direct`;
-   properly fixed by deploying our own arbiter — the roadmap's slashing phase.)
+   the deposits are locked behind someone else's key. (Mitigated: `SETTLEMENT_MODE=direct`; fixed
+   for honest arbiter release by setting `ARBITER_PROGRAM_ID` to a checkout-owned deployment, with
+   startup preflight so mismatched configs fail before escrow is opened.)
 4. **The seller that couldn't be paid** — a brand-new receive wallet can't accept a payout below
    Solana's rent floor (~0.00089 SOL); micro-releases fail wholesale and every round stalls at
    DELIVERED. (Fixed: launch preflight + one-off top-up.)
@@ -176,6 +177,7 @@ Buyer wallet: `ByowCmt5bMKXL3t1Mj1rJiismnDgxbkNnHQn5cD9Hc3g` · Seller receive w
 - The in-round refund waits out deadlines ≤120s; longer deadlines log and leave funds refundable
   manually (the on-chain instruction works whenever).
 - The opt-in `arbiter-agent` (neutral verify + settle, `ARBITER_AGENT_ENABLED=1`) is built and
-  unit-tested, but on-chain arbiter settlement is still blocked by finding #3 on the shared devnet
-  program — own deployment is Phase 7.
+  unit-tested. Honest on-chain `ARBITER_RELEASED` needs an `ARBITER_PROGRAM_ID` deployment whose
+  config is initialized to this checkout's `ARBITER_KEYPAIR_B58`; the public shared deployment is
+  still locked to another arbiter and now fails preflight instead of failing late with `NotArbiter`.
 - One service (`txline`); `jupiter_quote` is Phase 1 of the roadmap.

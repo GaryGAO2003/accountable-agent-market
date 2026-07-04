@@ -30,7 +30,8 @@ import { assertDevnet, verifyPayment } from '@pay/agent-runtime'
 import { analyzeEdge, fairLine } from '../agent/edge.js'
 import {
   makeArbiter, initConfig, open as arbiterOpen, arbitrateRelease,
-  configPda, vaultPda, arbitratedEscrowPda, ARBITER_PROGRAM_ID,
+  vaultPda, arbitratedEscrowPda,
+  assertConfiguredArbiter, getConfiguredArbiter,
 } from '../agent/arbiter.js'
 import { makeProgram, deposit, release, escrowPda } from '../agent/escrow.js'
 
@@ -231,10 +232,11 @@ async function settle(amountSol: number, fixtureId: string): Promise<unknown> {
 /** Configure the arbiter program once (idempotent): set who the neutral arbiter is. Admin = the payer. */
 async function ensureArbiterConfig(admin: Keypair, arbiter: PublicKey): Promise<void> {
   const program = makeArbiter(admin, RPC)
-  try {
-    await (program.account as any).config.fetch(configPda())
-    return // already configured
-  } catch { /* not yet - set it below */ }
+  const configured = await getConfiguredArbiter(RPC)
+  if (configured) {
+    assertConfiguredArbiter(arbiter, configured)
+    return
+  }
   await initConfig(program, admin, arbiter)
 }
 

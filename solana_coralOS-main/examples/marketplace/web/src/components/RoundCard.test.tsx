@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, screen, cleanup, within } from '@testing-library/react'
 import { RoundCard } from './RoundCard'
-import { settledRound, refundedRound } from '../../tests/fixtures'
+import { settledRound, refundedRound, slashedRound } from '../../tests/fixtures'
 
 afterEach(cleanup)
 
@@ -52,5 +52,14 @@ describe('RoundCard', () => {
     const refund = screen.getByRole('link', { name: /refund/i }) as HTMLAnchorElement
     expect(refund.href).toContain(refundedRound.refund!.sig)
     expect(refund.href).toContain('cluster=devnet')
+  })
+
+  it('shows L1 challenge and slash evidence', () => {
+    render(<RoundCard round={slashedRound} />)
+    expect(screen.getByTestId('status').textContent).toBe('slashed')
+    expect(screen.getByTestId('accountability').textContent).toContain('challenge upheld')
+    const slash = screen.getByRole('link', { name: /slash/i }) as HTMLAnchorElement
+    expect(slash.href).toContain(slashedRound.slash!.sig)
+    expect(slash.href).toContain('cluster=devnet')
   })
 })

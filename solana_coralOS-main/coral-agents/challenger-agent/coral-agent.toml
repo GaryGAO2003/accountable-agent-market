@@ -1,0 +1,26 @@
+edition = 4
+
+[agent]
+name = "challenger-agent"
+version = "0.1.0"
+description = "Independent challenger for the marketplace. Re-executes delivered evidence during the optimistic window and posts a challenge bond before disputing bad data."
+summary = "A separate L1 challenger agent that decides whether to open CHALLENGE_OPENED with a bond proof."
+readme = "Listens for CHALLENGE_REVIEW messages, re-executes objective TxLINE evidence, posts CHALLENGER_BOND_SOL to the bond holder, and emits CHALLENGE_OPENED when delivery deviates."
+
+[agent.license]
+type = "spdx"
+expression = "MIT"
+
+[options]
+CHALLENGER_KEYPAIR_B58 = { type = "string", description = "Base58-encoded devnet challenger keypair; signs challenge bond transfers" }
+AGENT_NAME = { type = "string", default = "challenger-agent", description = "Market identity for the challenger" }
+SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL (devnet)" }
+TXLINE_API_KEY = { type = "string", default = "", description = "Activated TxLINE API token for objective re-exec" }
+TXLINE_BASE_URL = { type = "string", default = "", description = "Override the TxLINE host" }
+BOND_HOLDER_WALLET = { type = "string", default = "", description = "Wallet that temporarily holds challenger bonds, usually the arbiter wallet" }
+CHALLENGER_BOND_SOL = { type = "f64", default = 0.0001, description = "Challenger bond posted before opening a challenge" }
+MAX_CHALLENGER_BOND_SOL = { type = "f64", default = 0.01, description = "Hard cap on challenger bond transfer size" }
+TRACE = { type = "string", default = "", description = "Set to 1 to log challenger decisions" }
+
+[runtimes.docker]
+image = "challenger-agent:0.1.0"

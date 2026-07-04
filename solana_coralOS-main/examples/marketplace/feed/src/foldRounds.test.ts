@@ -60,7 +60,25 @@ describe('foldRounds', () => {
       code: 'txline_count_mismatch',
       reason: 'delivered count differs from re-exec',
     })
-    expect(r.status).toBe('verification_failed')
+    expect(r.status).toBe('rejected')
+  })
+
+  it('folds L1 bond, challenge, upheld decision, and slash proof', () => {
+    const [r] = foldRounds([
+      ...round1.slice(0, 7),
+      { sender: 'seller-premium', text: 'BOND_POSTED round=1 seller=Seller111 holder=Arbiter111 amount=0.0001 sig=BondSig111' },
+      { sender: 'buyer-agent', text: 'CHALLENGE_OPENED round=1 by=buyer-agent reason="count differs"' },
+      { sender: 'arbiter-agent', text: 'ARBITER_REJECTED round=1 ok=0 code=txline_count_mismatch reason="delivered count differs from re-exec"' },
+      { sender: 'arbiter-agent', text: 'CHALLENGE_UPHELD round=1 code=txline_count_mismatch reason="delivered count differs from re-exec"' },
+      { sender: 'arbiter-agent', text: 'ARBITER_SLASHED round=1 sig=SlashSig111 amount=0.0001 from=Arbiter111 to=Buyer111 bond=seller settlement=transfer' },
+    ], sellers)
+
+    expect(r.bond).toEqual({ seller: 'Seller111', holder: 'Arbiter111', amountSol: 0.0001, sig: 'BondSig111' })
+    expect(r.challenge).toEqual({ by: 'buyer-agent', reason: 'count differs' })
+    expect(r.challengeDecision?.upheld).toBe(true)
+    expect(r.slash?.sig).toBe('SlashSig111')
+    expect(r.slash?.bond).toBe('seller')
+    expect(r.status).toBe('slashed')
   })
 
   it('treats ARBITER_RELEASED as a settled release without changing the wire protocol', () => {
