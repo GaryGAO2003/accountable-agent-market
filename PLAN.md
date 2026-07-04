@@ -194,6 +194,67 @@ the session fixture. Freeze code by 19:00 for the video (deadline 22:59).
 **Stop-loss**: minimum shippable L2 = T1 + T2 + T4 + one README paragraph. Cut order: T3 →
 FlowView 4th scene.
 
+## L3 — Reputation (the market remembers) — ACTIVE 2026-07-04
+
+Source: `PROPOSAL.md` §3/§7 L3, minus ERC-8004 (CRITIQUE §4: dropped — a clean Solana reputation
+layer stands on its own). Scope decision for today: an **off-chain ledger that changes buyer
+behavior** + dashboard visibility + an **on-chain reputation trail via the Memo program** (real
+Explorer links, honestly labeled a *log*, not a PDA state machine — an own-program reputation PDA
+and bond-scaling stay on the roadmap). The story L3 adds on top of L1/L2: today the rogue/hijacker
+can re-win round after round (they never profit, but they waste rounds); with L3 the market
+**remembers** — one strike and the buyer freezes them out of every later auction.
+
+### Frozen interface (teammate coordination — see rule below)
+
+- Thread line, emitted by the buyer once per round at its first terminal outcome, folded by the feed:
+  `REPUTATION seller=<name> score=<int> tier=<trusted|neutral|flagged> outcome=<settled|refunded|blocked|verify_failed> round=<n>[ sig=<memo tx sig>]`
+- Scoring: `settled +2`; `refunded | blocked | verify_failed −3` (one fraud outweighs one good
+  delivery). Tiers: score ≥ 2 `trusted`, ≤ −3 `flagged`, else `neutral`. **flagged ⇒ the buyer
+  drops that seller's bids from the pool before awarding (frozen out).** Exactly ONE reputation
+  update per round — the first terminal outcome wins (blocked → verify_failed → refunded → settled).
+- Envs: `REP_FLAG_THRESHOLD` (−3), `REP_TRUST_THRESHOLD` (2), `REP_MEMO` (1 = also write the line
+  to the SPL Memo program and append `sig=` to the thread line; 0 = thread-only).
+- **Coordination with the audit-console track (teammate, "Option 2")**: distinct verbs
+  (`REPUTATION` here vs `EGRESS_AUDIT` there); each feature keeps its `format*`/`parse*` in its OWN
+  module (`market/reputation.ts` here — do not extend `protocol.ts`); `foldRounds.ts` arms and
+  `styles.css` blocks are append-only; whoever pushes second rebases (conflicts are trivial by
+  construction). Buyer-side insertion points differ too: audit = the egress check sites, reputation
+  = pickWinner + the terminal-outcome sites.
+
+### R1 — runtime core (owner: this session, coder=opus) ~45min
+`packages/agent-runtime/src/market/reputation.ts`: `ReputationLedger` (per-seller cumulative score,
+pure, no clock), `RepOutcome`/`RepTier`, threshold-configurable `tier()`, `formatReputation`/
+`parseReputation` (frozen line incl. optional `sig=`). Plus `packages/agent-runtime/src/solana/memo.ts`:
+`MEMO_PROGRAM_ID`, pure `buildMemoIx(payer, text)` + thin `sendMemo(keypair, text)` over the
+devnet-guarded connection. Unit tests: scoring table, tier boundaries at exact thresholds,
+format/parse round-trip ± sig, memo instruction encoding (no network). Gate: runtime tests +
+typecheck + build.
+
+### R2 — buyer wiring (owner: this session, coder=opus) ~1h
+One `ReputationLedger` per session. After `selectBids`: drop flagged sellers from the pool (log
+`[rep] <seller> frozen out (score=<n>)`); empty pool ⇒ NO_SELLERS. `recordOnce(outcome)` helper —
+first terminal outcome per round updates the ledger, optionally writes the Memo tx (`REP_MEMO=1`
+default; on RPC failure fall back to thread-only), and sends the frozen `REPUTATION` line to the
+thread. Call sites: deposit EGRESS deny → `blocked`; `VERIFICATION_FAILED` → `verify_failed`
+(recorded immediately, before the refund wait); refund success → `refunded`; release success →
+`settled`. Arbiter-agent branch: skip with a one-line comment (demo runs direct). Manifest + start.ts
+forward the three envs. Gate: buyer tests + marketplace typecheck.
+
+### R3 — feed + dashboard (owner: this session, coder=opus) ~1h
+`foldRounds`: fold `REPUTATION` lines with a running ledger while folding (messages are
+chronological) — stamp each bid with the seller's tier *at bid time* (`bid.sellerTier`), and record
+`round.reputation = {seller, score, tier, outcome, sig?}`. `/api/feed` gains a `reputation`
+summary (final per-seller score/tier). Web: tier badges on bid rows (`flagged` = red "frozen out",
+`trusted` = mint), a per-seller reputation strip, and the Memo Explorer link on the update line
+(this one IS a real tx — link it; the *freeze* itself remains off-chain and is labeled as such).
+Gate: feed + web tests + typecheck.
+
+### Docs + stop-loss
+README ×2 + DEMO: the L3 story (one strike → frozen out; L1 refunds each incident, L2 blocks each
+attempt, L3 stops awarding the repeat offender at all), Memo-trail honesty note. **Stop-loss**:
+R1 + R2 + one README paragraph = the story stands. Cut order: Memo trail → reputation strip
+(keep bid badges).
+
 ## Known quirks (documented, not v0.1 blockers)
 - `FLOOR_SOL` default mismatch: code `0.0003` (`bidder.ts:31`) vs existing manifests `0.0005` — manifest
   defaults win when launched via coral; Task B sets explicit per-persona values anyway.
