@@ -69,8 +69,9 @@ describe('buyer deposit egress gate', () => {
     expect(deposited).toBe(false)
     if (!verdict.allow) expect(verdict.code).toBe('RECIPIENT_NOT_ALLOWED')
     expect(deposit).not.toHaveBeenCalled()
-    expect(sent).toHaveLength(1)
-    expect(sent[0]).toMatch(/^EGRESS_DENIED round=7 code=RECIPIENT_NOT_ALLOWED action=deposit detail=/)
+    expect(sent).toHaveLength(2)
+    expect(sent[0]).toMatch(/^EGRESS_AUDIT round=7 seq=1 decision=DENY action=deposit code=RECIPIENT_NOT_ALLOWED detail=/)
+    expect(sent[1]).toMatch(/^EGRESS_DENIED round=7 code=RECIPIENT_NOT_ALLOWED action=deposit detail=/)
     expect(audit.entries.at(-1)?.decision).toBe('DENY')
     expect(state.spentLamports).toBe(0) // nothing committed on a denied action
   })
@@ -88,7 +89,8 @@ describe('buyer deposit egress gate', () => {
     expect(deposited).toBe(true)
     expect(verdict.allow).toBe(true)
     expect(deposit).toHaveBeenCalledTimes(1)
-    expect(sent).toHaveLength(0) // no EGRESS_DENIED surfaced
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatch(/^EGRESS_AUDIT round=1 seq=1 decision=ALLOW action=deposit detail=deposit 0.001 SOL ->/)
     expect(audit.entries.at(-1)?.decision).toBe('ALLOW')
     expect(state.spentLamports).toBe(Math.round(0.001 * LAMPORTS_PER_SOL)) // committed after the deposit landed
   })

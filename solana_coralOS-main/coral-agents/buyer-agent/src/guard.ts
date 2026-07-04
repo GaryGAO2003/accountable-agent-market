@@ -1,6 +1,6 @@
 import { LAMPORTS_PER_SOL } from '@solana/web3.js'
 import {
-  checkEgress, formatEgressDenied,
+  checkEgress, formatEgressAudit, formatEgressDenied,
   type EgressPolicy, type EgressState, type EgressAction, type EgressDecision, type AuditLog,
 } from '@pay/agent-runtime'
 
@@ -99,9 +99,9 @@ export function buildEgressPolicy(opts: {
  * The buyer's egress choke point around one money action - wraps the runtime PEP's pure `checkEgress`
  * with the audit + wire-notice side effects the market loop needs:
  *   1. decide (`checkEgress` against the session policy + running counters),
- *   2. append the verdict to the audit trail and mirror the entry to stdout (docker logs = the audit sink),
- *   3. on a denial, surface the frozen `EGRESS_DENIED` line through `notify` (a thread send for
- *      deposit/release, or a bare log for the background refund path).
+ *   2. append the verdict to the audit trail and mirror the entry to stdout (docker logs = one audit sink),
+ *   3. surface an `EGRESS_AUDIT` line through `notify` for the shared-thread firewall console,
+ *   4. on a denial, also surface the terminal `EGRESS_DENIED` line so the round folds to blocked.
  * Returns the decision so the caller performs the tx and calls `commitEgress` **only** on `{ allow: true }`
  * (check → act → commit - a denied or unsent action must never advance the counters).
  */
@@ -117,6 +117,14 @@ export async function checkEgressAudited(
   const verdict = checkEgress(state, policy, action, nowMs)
   const entry = audit.record(action, verdict)
   console.log('[egress]', JSON.stringify(entry))
+  await notify(formatEgressAudit({
+    round,
+    seq: entry.seq,
+    decision: entry.decision,
+    action: action.kind,
+    ...(entry.code ? { code: entry.code } : {}),
+    detail: entry.detail ?? entry.action,
+  }))
   if (!verdict.allow) await notify(formatEgressDenied(round, verdict.code, action.kind, verdict.detail))
   return verdict
 }

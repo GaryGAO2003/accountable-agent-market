@@ -13,11 +13,14 @@ expression = "MIT"
 
 [options]
 ARBITER_KEYPAIR_B58 = { type = "string", description = "Base58-encoded devnet arbiter keypair; signs arbiter release/refund" }
+ARBITER_PROGRAM_ID = { type = "string", default = "", description = "Override arbiter wrapper program id; useful for local/forked arbiter deployments" }
 AGENT_NAME = { type = "string", default = "arbiter-agent", description = "Market identity for the neutral arbiter" }
 SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL (devnet)" }
 TXLINE_API_KEY = { type = "string", default = "", description = "Activated TxLINE API token for objective re-exec" }
 TXLINE_BASE_URL = { type = "string", default = "", description = "Override the TxLINE host" }
 ARBITER_REFUND_ON_REJECT = { type = "string", default = "", description = "Set to 1 to attempt arbitrate_refund after ARBITER_REJECTED; escrow deadline still applies" }
+SELLER_BOND_SOL = { type = "f64", default = 0.0001, description = "Amount to slash from seller bond when a challenge is upheld" }
+CHALLENGER_BOND_SOL = { type = "f64", default = 0.0001, description = "Amount to slash from challenger bond when a challenge is rejected" }
 TRACE = { type = "string", default = "", description = "Set to 1 to log review details + Explorer links" }
 
 [runtimes.docker]

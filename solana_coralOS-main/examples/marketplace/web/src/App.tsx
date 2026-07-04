@@ -3,13 +3,14 @@ import { useFeed, startMarket } from './api'
 import { MarketView } from './components/MarketView'
 import { Explainer } from './components/Explainer'
 import { FlowView } from './components/FlowView'
+import { AuditConsole } from './components/AuditConsole'
 
 /** Read ?session=<id> from the URL so the launcher can deep-link straight to a live market. */
 const initialSession = new URLSearchParams(window.location.search).get('session') ?? ''
 
 export default function App() {
   const [session, setSession] = useState(initialSession)
-  const [tab, setTab] = useState<'market' | 'flow'>('market')
+  const [tab, setTab] = useState<'market' | 'audit' | 'flow'>('market')
   const [starting, setStarting] = useState(false)
   const [startErr, setStartErr] = useState<string>()
   const { rounds, connected, error } = useFeed(session)
@@ -54,6 +55,8 @@ export default function App() {
       <nav className="tabs" aria-label="views">
         <button className={`tab ${tab === 'market' ? 'tab-active' : ''}`} type="button"
           data-testid="tab-market" onClick={() => setTab('market')}>Live market</button>
+        <button className={`tab ${tab === 'audit' ? 'tab-active' : ''}`} type="button"
+          data-testid="tab-audit" onClick={() => setTab('audit')}>Audit console</button>
         <button className={`tab ${tab === 'flow' ? 'tab-active' : ''}`} type="button"
           data-testid="tab-flow" onClick={() => setTab('flow')}>Follow the money</button>
       </nav>
@@ -61,6 +64,8 @@ export default function App() {
       <main>
         {tab === 'flow' ? (
           <FlowView />
+        ) : tab === 'audit' ? (
+          <AuditConsole rounds={rounds} />
         ) : (
           <>
             <Explainer />

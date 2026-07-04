@@ -7,7 +7,16 @@ export interface RoundBid {
   note?: string
 }
 
-export type RoundStatus = 'bidding' | 'awarded' | 'deposited' | 'delivered' | 'verified' | 'verification_failed' | 'settled' | 'refunded' | 'blocked'
+export interface RoundEgressAudit {
+  seq: number
+  decision: 'ALLOW' | 'DENY'
+  action: string
+  code?: string
+  detail: string
+  by?: string
+}
+
+export type RoundStatus = 'bidding' | 'awarded' | 'deposited' | 'delivered' | 'verified' | 'challenged' | 'rejected' | 'verification_failed' | 'settled' | 'refunded' | 'slashed' | 'blocked'
 
 export interface Round {
   round: number
@@ -17,13 +26,18 @@ export interface Round {
   award?: { to: string; reason?: string }
   escrow?: { reference: string; seller: string; amountSol: number; deadlineSecs: number }
   deposit?: { sig: string; buyer: string }
+  bond?: { seller: string; holder: string; amountSol: number; sig: string }
   delivered?: { raw: string; data?: unknown }
   verification?: { ok: boolean; code: string; reason: string }
+  challenge?: { by: string; reason: string; challenger?: string; bondSig?: string }
+  challengeDecision?: { upheld: boolean; code: string; reason: string }
   release?: { sig: string }
   refunded?: boolean
   refund?: { sig: string }
+  slash?: { sig: string; amountSol?: number; from?: string; to?: string; bond?: 'seller' | 'challenger' }
   /** An egress PEP refused an action for this round — no on-chain tx happened, so no sig/link exists. */
   egress?: { code: string; action: string; by?: string }
+  egressAudits?: RoundEgressAudit[]
   status: RoundStatus
 }
 
