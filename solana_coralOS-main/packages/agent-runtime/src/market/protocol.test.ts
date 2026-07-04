@@ -4,6 +4,9 @@ import {
   formatEscrowRequired, parseEscrowRequired, formatDeposited, parseDeposited,
   formatDelivered, parseDelivered, formatVerified, parseVerified,
   formatArbiterReview, parseArbiterReview, formatArbiterDecision, parseArbiterDecision,
+  formatChallengeReview, parseChallengeReview,
+  formatBondPosted, parseBondPosted, formatChallengeOpened, parseChallengeOpened,
+  formatChallengeDecision, parseChallengeDecision, formatSlash, parseSlash,
   selectBids, pickCheapest, verb, messageRound,
   type Bid,
 } from './protocol.js'
@@ -98,6 +101,7 @@ describe('arbiter review round-trip', () => {
       reference: 'Ref111',
       seller: 'Seller111',
       payer: 'Buyer111',
+      challenger: 'Challenger111',
       raw: '{"service":"txline-edge","fixtureId":"123"}',
     }
     expect(parseArbiterReview(formatArbiterReview(review))).toEqual(review)
@@ -126,6 +130,85 @@ describe('arbiter review round-trip', () => {
     })
     expect(verb(rejected)).toBe('ARBITER_REJECTED')
     expect(parseArbiterDecision(rejected)?.ok).toBe(false)
+  })
+})
+
+describe('L1 accountability messages', () => {
+  it('CHALLENGE_REVIEW carries delivery evidence for a separate challenger agent', () => {
+    const review = {
+      round: 4,
+      service: 'txline',
+      arg: 'fixtures',
+      raw: '{"service":"txline-fixtures","count":13}',
+    }
+    const msg = formatChallengeReview(review)
+    expect(verb(msg)).toBe('CHALLENGE_REVIEW')
+    expect(parseChallengeReview(msg)).toEqual(review)
+  })
+
+  it('BOND_POSTED records the slashable seller bond proof', () => {
+    const bond = {
+      round: 4,
+      seller: 'Seller111',
+      holder: 'Arbiter111',
+      amountSol: 0.0001,
+      sig: 'BondSig111',
+    }
+    expect(parseBondPosted(formatBondPosted(bond))).toEqual(bond)
+  })
+
+  it('CHALLENGE_OPENED carries challenger evidence without breaking old messages', () => {
+    const challenge = {
+      round: 4,
+      by: 'challenger-agent',
+      reason: 'objective re-exec found bad data',
+      challenger: 'Challenger111',
+      bondSig: 'ChallengeBondSig',
+    }
+    const msg = formatChallengeOpened(challenge)
+    expect(verb(msg)).toBe('CHALLENGE_OPENED')
+    expect(parseChallengeOpened(msg)).toEqual(challenge)
+  })
+
+  it('CHALLENGE_UPHELD / CHALLENGE_REJECTED records the dispute outcome', () => {
+    const upheld = formatChallengeDecision({
+      round: 4,
+      upheld: true,
+      code: 'txline_count_mismatch',
+      reason: 'seller count differed from re-exec',
+    })
+    expect(verb(upheld)).toBe('CHALLENGE_UPHELD')
+    expect(parseChallengeDecision(upheld)).toEqual({
+      round: 4,
+      upheld: true,
+      code: 'txline_count_mismatch',
+      reason: 'seller count differed from re-exec',
+    })
+
+    const rejected = formatChallengeDecision({
+      round: 5,
+      upheld: false,
+      code: 'txline_fixtures_match',
+      reason: 'delivery matched',
+    })
+    expect(verb(rejected)).toBe('CHALLENGE_REJECTED')
+    expect(parseChallengeDecision(rejected)?.upheld).toBe(false)
+  })
+
+  it('SLASHED / ARBITER_SLASHED carries the on-chain slash signature', () => {
+    const slash = {
+      round: 4,
+      sig: 'SlashSig111',
+      amountSol: 0.0001,
+      from: 'Arbiter111',
+      to: 'Buyer111',
+      bond: 'seller' as const,
+      settlement: 'transfer' as const,
+      arbiter: true,
+    }
+    const msg = formatSlash(slash)
+    expect(verb(msg)).toBe('ARBITER_SLASHED')
+    expect(parseSlash(msg)).toEqual(slash)
   })
 })
 

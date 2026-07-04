@@ -10,6 +10,7 @@ WANT service=txline arg="edge <fixtureId>"
   -> AWARD to=<me>
   -> ESCROW_REQUIRED settlement=arbiter reference=<bound order>
   -> verify funded escrow using vault PDA
+  -> BOND_POSTED sig=<devnet transfer>
   -> DELIVERED {teams, odds, analysis}
 ```
 
@@ -22,6 +23,9 @@ WANT service=txline arg="edge <fixtureId>"
 The seller only delivers after `isFunded` confirms the escrow names its payout wallet and holds at
 least the quoted price. In arbiter mode it checks the escrow buyer as the vault PDA from `DEPOSITED`,
 not the human buyer wallet.
+Before delivery, it posts the small transfer-backed L1 demo bond (`SELLER_BOND_SOL`) to
+`BOND_HOLDER_WALLET` / `ARBITER_WALLET`; challenged bad deliveries can then be slashed by
+arbiter-agent with a real devnet transfer signature.
 
 ## Files
 
@@ -37,8 +41,9 @@ not part of the TxODDS CoralOS seller loop.
 
 ## Env
 
-`SELLER_WALLET`, `AGENT_NAME`, `SERVICES=txline`, `FLOOR_SOL`, `PERSONA`, `SETTLEMENT_MODE=arbiter`,
-`ESCROW_DEADLINE_SECS`, `SOLANA_RPC_URL`, and `TXLINE_API_KEY`.
+`SELLER_WALLET`, `SELLER_KEYPAIR_B58`, `BOND_HOLDER_WALLET`, `SELLER_BOND_SOL`, `AGENT_NAME`,
+`SERVICES=txline`, `FLOOR_SOL`, `PERSONA`, `SETTLEMENT_MODE=arbiter`, `ESCROW_DEADLINE_SECS`,
+`SOLANA_RPC_URL`, and `TXLINE_API_KEY`.
 
 For live analysis set an LLM key — the kit's LLM is **Venice AI** (`LLM_PROVIDER=venice` + `VENICE_API_KEY`;
 new accounts get $50 free via code `IMPERIAL50` at [venice.ai/settings/api](https://venice.ai/settings/api)).

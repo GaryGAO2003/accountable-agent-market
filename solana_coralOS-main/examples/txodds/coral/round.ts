@@ -57,6 +57,7 @@ async function main(): Promise<void> {
   const wallet = env.WALLET
   const keypair = env.BUYER_KEYPAIR_B58
   const arbiter = env.ARBITER_KEYPAIR_B58
+  const arbiterProgramId = env.ARBITER_PROGRAM_ID ?? ''
   if (!arbiter) throw new Error('ARBITER_KEYPAIR_B58 must be in .env - run `node scripts/setup.js`')
   if (!wallet || !keypair) throw new Error('WALLET + BUYER_KEYPAIR_B58 must be in .env — run `node scripts/setup.js`')
   if (!env.TXLINE_API_KEY) throw new Error('TXLINE_API_KEY missing — run `npm run mint` (examples/txodds) first')
@@ -97,6 +98,7 @@ async function main(): Promise<void> {
   const buyer = agent('buyer-agent', {
     BUYER_KEYPAIR_B58: str(keypair), AGENT_NAME: str('buyer-agent'), SOLANA_RPC_URL: str(rpc),
     ARBITER_KEYPAIR_B58: str(arbiter), SETTLEMENT_MODE: str('arbiter'),
+    ...(arbiterProgramId ? { ARBITER_PROGRAM_ID: str(arbiterProgramId) } : {}),
     SELLER_WALLET: str(wallet), BUYER_MAX_SOL: f64(Number(env.BUYER_MAX_SOL ?? '0.001')),
     BUYER_SERVICE: str('txline'), BUYER_ARG: str(`edge ${fixtureId}`),
     MARKET_SELLERS: str('seller-worldcup,seller-fast,seller-premium'), ...llm,

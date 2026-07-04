@@ -27,10 +27,17 @@ BUYER_ARGS = { type = "string", default = "", description = "Comma-separated arg
 MARKET_SELLERS = { type = "string", default = "seller-worldcup,seller-fast,seller-premium", description = "Comma-separated seller names in the market thread" }
 ARBITER_AGENT_ENABLED = { type = "string", default = "", description = "Set to 1 to delegate objective re-exec + release/refund to arbiter-agent" }
 ARBITER_AGENT_NAME = { type = "string", default = "arbiter-agent", description = "CoralOS agent name for the neutral arbiter" }
+CHALLENGER_AGENT_ENABLED = { type = "string", default = "", description = "Set to 1 to include a separate challenger-agent during the optimistic window" }
+CHALLENGER_AGENT_NAME = { type = "string", default = "challenger-agent", description = "CoralOS agent name for the independent challenger" }
+CHALLENGE_WINDOW_MS = { type = "string", default = "5000", description = "Optimistic challenge window after delivery before release" }
+AUTO_CHALLENGE_ON_FAILED_VERIFY = { type = "string", default = "1", description = "Set to 0 to skip buyer precheck and only honor explicit CHALLENGE_OPENED messages" }
+SELLER_BOND_SOL = { type = "f64", default = 0.0001, description = "Slashable seller bond amount expected for L1 challenge demos" }
 BID_WINDOW_MS = { type = "f64", default = 5000, description = "How long to collect competing bids each round" }
 CYCLE_INTERVAL_MS = { type = "f64", default = 30000, description = "Delay between market rounds" }
 SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL (devnet)" }
 SETTLEMENT_MODE = { type = "string", default = "arbiter", description = "arbiter (default) | direct legacy base escrow" }
+TXLINE_API_KEY = { type = "string", default = "", description = "Activated TxLINE API token - the buyer re-executes the objective read to verify deliveries" }
+TXLINE_BASE_URL = { type = "string", default = "", description = "Override the TxLINE host (defaults to txline-dev.txodds.com)" }
 ANTHROPIC_API_KEY = { type = "string", default = "", description = "Anthropic key (default brain for best-value selection)" }
 OPENAI_API_KEY = { type = "string", default = "", description = "OpenAI key - set with LLM_PROVIDER=openai to flip the brain" }
 VENICE_API_KEY = { type = "string", default = "", description = "Venice AI key (OpenAI-compatible, free credits) - set with LLM_PROVIDER=venice to flip the brain" }

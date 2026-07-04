@@ -47,10 +47,25 @@ export function RoundCard({ round }: { round: Round }) {
         </p>
       )}
 
+      {(round.bond || round.challenge || round.challengeDecision || round.slash) && (
+        <div className="accountability" data-testid="accountability">
+          {round.bond && <span>bond {round.bond.amountSol} SOL posted</span>}
+          {round.challenge && <span>challenge by {round.challenge.by}: {round.challenge.reason}</span>}
+          {round.challengeDecision && (
+            <span>{round.challengeDecision.upheld ? 'challenge upheld' : 'challenge rejected'}: {round.challengeDecision.reason}</span>
+          )}
+          {round.slash && <span>{round.slash.bond ?? 'seller'} bond slashed{round.slash.amountSol ? ` (${round.slash.amountSol} SOL)` : ''}</span>}
+        </div>
+      )}
+
       <footer className="settle-row">
         {round.deposit && <SettlementBadge label={`deposit ${round.escrow?.amountSol ?? ''} SOL`} sig={round.deposit.sig} />}
+        {round.bond && <SettlementBadge label="bond" sig={round.bond.sig} />}
         {round.release && <SettlementBadge label="release" sig={round.release.sig} />}
-        {round.refunded && <span className="settle settle-refund" data-testid="refund">refunded</span>}
+        {round.refund?.sig
+          ? <SettlementBadge label="refund" sig={round.refund.sig} className="settle-refund" />
+          : round.refunded && <span className="settle settle-refund" data-testid="refund">refunded</span>}
+        {round.slash && <SettlementBadge label="slash" sig={round.slash.sig} className="settle-slash" />}
       </footer>
     </article>
   )

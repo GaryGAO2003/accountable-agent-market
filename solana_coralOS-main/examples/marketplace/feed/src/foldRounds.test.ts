@@ -60,7 +60,25 @@ describe('foldRounds', () => {
       code: 'txline_count_mismatch',
       reason: 'delivered count differs from re-exec',
     })
-    expect(r.status).toBe('verification_failed')
+    expect(r.status).toBe('rejected')
+  })
+
+  it('folds L1 bond, challenge, upheld decision, and slash proof', () => {
+    const [r] = foldRounds([
+      ...round1.slice(0, 7),
+      { sender: 'seller-premium', text: 'BOND_POSTED round=1 seller=Seller111 holder=Arbiter111 amount=0.0001 sig=BondSig111' },
+      { sender: 'buyer-agent', text: 'CHALLENGE_OPENED round=1 by=buyer-agent reason="count differs"' },
+      { sender: 'arbiter-agent', text: 'ARBITER_REJECTED round=1 ok=0 code=txline_count_mismatch reason="delivered count differs from re-exec"' },
+      { sender: 'arbiter-agent', text: 'CHALLENGE_UPHELD round=1 code=txline_count_mismatch reason="delivered count differs from re-exec"' },
+      { sender: 'arbiter-agent', text: 'ARBITER_SLASHED round=1 sig=SlashSig111 amount=0.0001 from=Arbiter111 to=Buyer111 bond=seller settlement=transfer' },
+    ], sellers)
+
+    expect(r.bond).toEqual({ seller: 'Seller111', holder: 'Arbiter111', amountSol: 0.0001, sig: 'BondSig111' })
+    expect(r.challenge).toEqual({ by: 'buyer-agent', reason: 'count differs' })
+    expect(r.challengeDecision?.upheld).toBe(true)
+    expect(r.slash?.sig).toBe('SlashSig111')
+    expect(r.slash?.bond).toBe('seller')
+    expect(r.status).toBe('slashed')
   })
 
   it('treats ARBITER_RELEASED as a settled release without changing the wire protocol', () => {
@@ -88,14 +106,28 @@ describe('foldRounds', () => {
     expect(foldRounds(msgs).find((r) => r.round === 2)?.bids).toHaveLength(1)
   })
 
-  it('handles a refund-after-deadline round', () => {
+  it('handles a refund-after-deadline round (older transcript with no sig)', () => {
     const msgs: RawMessage[] = [
       { sender: 'buyer-agent', text: 'WANT round=3 service=coingecko arg=x budget=0.001' },
       { sender: 'seller-cheap', text: 'BID round=3 price=0.0002 by=seller-cheap' },
       { sender: 'buyer-agent', text: 'AWARD round=3 to=seller-cheap' },
       { sender: 'buyer-agent', text: 'REFUNDED round=3' },
     ]
-    expect(foldRounds(msgs).find((r) => r.round === 3)?.status).toBe('refunded')
+    const r = foldRounds(msgs).find((r) => r.round === 3)
+    expect(r?.status).toBe('refunded')
+    expect(r?.refund).toBeUndefined()
+  })
+
+  it('captures the refund tx sig when the buyer reclaims escrow on-chain', () => {
+    const msgs: RawMessage[] = [
+      { sender: 'buyer-agent', text: 'WANT round=1 service=coingecko arg=x budget=0.001' },
+      { sender: 'seller-cheap', text: 'BID round=1 price=0.0002 by=seller-cheap' },
+      { sender: 'buyer-agent', text: 'AWARD round=1 to=seller-cheap' },
+      { sender: 'buyer-agent', text: 'REFUNDED round=1 sig=FAKESIG123 settlement=direct' },
+    ]
+    const r = foldRounds(msgs).find((r) => r.round === 1)
+    expect(r?.status).toBe('refunded')
+    expect(r?.refund?.sig).toBe('FAKESIG123')
   })
 
   it('handles an arbiter refund-after-rejection round', () => {

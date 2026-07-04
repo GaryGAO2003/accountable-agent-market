@@ -13,6 +13,9 @@ expression = "MIT"
 
 [options]
 SELLER_WALLET = { type = "string", description = "Devnet wallet pubkey that receives payments" }
+SELLER_KEYPAIR_B58 = { type = "string", default = "", description = "Base58 seller keypair used to post the L1 slashable bond" }
+BOND_HOLDER_WALLET = { type = "string", default = "", description = "Wallet that temporarily holds seller bonds, usually the arbiter wallet" }
+SELLER_BOND_SOL = { type = "f64", default = 0.0001, description = "Seller bond posted before delivery in L1 mode" }
 AGENT_NAME = { type = "string", default = "seller-worldcup", description = "Market identity (matches the registry name)" }
 SERVICES = { type = "string", default = "txline", description = "Inventory - this specialist bids only on txline (World Cup data)" }
 FLOOR_SOL = { type = "f64", default = 0.0005, description = "Cost floor - the LLM may never bid below this (the edge runs a real Claude call)" }

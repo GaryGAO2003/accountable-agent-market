@@ -32,7 +32,7 @@ const DEFAULT_SESSION = process.env.SESSION ?? ''
 const FIXTURE = process.env.FEED_FIXTURE
 const DEFAULT_SELLERS = process.env.DEMO_FAIL_VERIFICATION === '1'
   ? (process.env.DEMO_FAILING_SELLER ?? 'seller-cheap')
-  : 'seller-cheap,seller-honest,seller-premium'
+  : 'seller-cheap,seller-honest,seller-premium,seller-rogue'
 const SELLERS = (process.env.MARKET_SELLERS ?? DEFAULT_SELLERS)
   .split(',').map((s) => s.trim()).filter(Boolean)
 

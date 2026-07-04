@@ -15,7 +15,8 @@ import { PROGRAM_ID as ESCROW_PROGRAM_ID } from './escrow.js'
 
 const { AnchorProvider, BN } = anchor
 
-export const ARBITER_PROGRAM_ID = new PublicKey('FJtuVXsyXuRKqgJBEPAXmktkd13CqStapgevzGwYktXd')
+export const DEFAULT_ARBITER_PROGRAM_ID = 'FJtuVXsyXuRKqgJBEPAXmktkd13CqStapgevzGwYktXd'
+export const ARBITER_PROGRAM_ID = new PublicKey(process.env.ARBITER_PROGRAM_ID ?? DEFAULT_ARBITER_PROGRAM_ID)
 
 const ARBITER_IDL = {
   address: ARBITER_PROGRAM_ID.toBase58(),
@@ -76,6 +77,21 @@ export const arbitratedEscrowPda = (vault: PublicKey, reference: PublicKey): Pub
     ESCROW_PROGRAM_ID,
   )[0]
 
+export function decodeConfiguredArbiter(data: Uint8Array): PublicKey | null {
+  if (data.length < 8 + 32) return null
+  return new PublicKey(data.slice(8, 8 + 32))
+}
+
+export function assertConfiguredArbiter(expected: PublicKey, configured: PublicKey | null): void {
+  if (!configured || configured.equals(expected)) return
+  throw new Error(
+    `Arbiter program ${ARBITER_PROGRAM_ID.toBase58()} is configured for arbiter ` +
+    `${configured.toBase58()}, but ARBITER_KEYPAIR_B58 is ${expected.toBase58()}. ` +
+    'Set ARBITER_PROGRAM_ID to a deployment initialized with this arbiter key, or use the configured arbiter key. ' +
+    'Otherwise ARBITER_RELEASED will fail with NotArbiter.',
+  )
+}
+
 export function makeArbiter(signer: Keypair, rpcUrl: string): Program {
   const provider = new AnchorProvider(solanaConnection(rpcUrl), new anchor.Wallet(signer), { commitment: 'confirmed' })
   return new anchor.Program(ARBITER_IDL, provider)
@@ -84,7 +100,11 @@ export function makeArbiter(signer: Keypair, rpcUrl: string): Program {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export async function ensureArbiterConfig(admin: Keypair, arbiter: PublicKey, rpcUrl: string): Promise<void> {
   const connection = solanaConnection(rpcUrl)
-  if (await connection.getAccountInfo(configPda(), 'confirmed')) return
+  const config = await connection.getAccountInfo(configPda(), 'confirmed')
+  if (config) {
+    assertConfiguredArbiter(arbiter, decodeConfiguredArbiter(config.data))
+    return
+  }
   await (makeArbiter(admin, rpcUrl).methods as any)
     .initConfig(arbiter)
     .accounts({ admin: admin.publicKey, config: configPda(), systemProgram: SystemProgram.programId })
