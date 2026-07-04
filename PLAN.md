@@ -1,6 +1,6 @@
 # PLAN — Accountable Agent Market: version 0.1 and beyond
 
-Last updated: 2026-07-03 (Windows machine). Companion docs: `progress.md` (teammate's Mac work — the code
+Last updated: 2026-07-04 (Windows machine). Companion docs: `progress.md` (teammate's Mac work — the code
 changes there were lost; only the doc reached the Test branch), `coral_info.txt`, `CRITIQUE.md`.
 
 ## Where we are (verified against the code, not just progress.md)
@@ -116,6 +116,77 @@ changes there were lost; only the doc reached the Test branch), `coral_info.txt`
   arbiter decisions, slashing signatures, reputation deltas).
 - Working model per version: coder agents implement from written specs; every change lands with tests;
   verified centrally before commit.
+
+## L2 — Egress PEP (prevent layer) — ACTIVE 2026-07-04, two parallel parts
+
+Source: `PROPOSAL.md` §3/§7 — L2 = every outbound action passes a unified **Egress PEP**
+(allowlist · budget · velocity · replay-nonce · schema · integrity hash) + **audit log** +
+**reason-code taxonomy** → prevent+detect double loop. Demo beat (§9.4): an out-of-policy action
+blocked **pre-flight**. Honesty rule (CRITIQUE §7): an egress block is **not** an on-chain tx —
+the evidence is the audit log + the deposit that never appears, contrasted with a normal round's
+Explorer link.
+
+Inventory: the kit already has scattered fences — buyer `guard.ts` (recipient/reference allowlist +
+cumulative budget, "enforced in code, not in the prompt"), seller `replay.ts` (payment-sig replay),
+runtime `assertDevnet` + `signTransfer maxSol`. L2 = unify them behind one decision point, add the
+missing pieces (velocity, host allowlist, audit log, reason codes, thread + dashboard visibility),
+and plant one blocked-hijack demo beat.
+
+### Frozen interface (both parts build against this; do not change unilaterally)
+
+- Thread message, emitted by the agent that blocks its own outbound action, parsed by the feed:
+  `EGRESS_DENIED round=<n> code=<CODE> action=<deposit|release|refund|http> detail=<free text>`
+- `ReasonCode` string enum: `RECIPIENT_NOT_ALLOWED · REFERENCE_UNKNOWN · REFERENCE_REUSED ·
+  BUDGET_EXCEEDED · VELOCITY_EXCEEDED · AMOUNT_INVALID · HOST_NOT_ALLOWED · SCHEMA_INVALID ·
+  INTEGRITY_MISMATCH`
+- Feed fold: an `EGRESS_DENIED` line sets `round.egress = { code, action, by }` and
+  `status: 'blocked'`.
+- New env knobs (Part A internals, listed for the live run): buyer `EXPECTED_SELLER_WALLET`
+  (default = the shared demo `SELLER_WALLET`; empty ⇒ recipient check skipped, backward
+  compatible), `BUYER_MAX_TX_PER_MIN` (default 6); seller-rogue `TERMS_HIJACK_WALLET`
+  (a pubkey, or `random` = fresh keypair pubkey each session).
+
+### Part A — "Enforce" (runtime + agents; owner: Claude session) ~3.5h
+
+1. **T1 runtime PEP core** — new `packages/agent-runtime/src/market/egress.ts` + `egress.test.ts`:
+   `ReasonCode`, `EgressPolicy`, `EgressAction`, pure `checkEgress(state, policy, action, nowMs)`
+   returning `{allow:true} | {allow:false, code, detail}`; `AuditLog` (seq/ts/agent/action/
+   decision/code/detail, JSONL export). `protocol.ts` gains `formatEgressDenied`/parse arm in the
+   house `format*`/`parse*` style. Buyer `guardPayment` logic folds in (the old function stays as
+   a thin wrapper so its call sites + `escrow.guard.test.ts` keep passing).
+   Gate: agent-runtime tests + typecheck + build.
+2. **T2 buyer wiring** — deposit / release / refund all pass `checkEgress` first; DENY → audit +
+   `EGRESS_DENIED` into the thread + skip the round gracefully (**no tx is sent**); policy built
+   from env (knobs above). Hijack demo: seller-rogue option `TERMS_HIJACK_WALLET` plants a foreign
+   payout wallet in the escrow terms → buyer blocks `RECIPIENT_NOT_ALLOWED` pre-flight (this is
+   exactly guard.ts's F3 threat, now enforced and visible). `start.ts` forwards the new options.
+   Gate: buyer tests + marketplace typecheck.
+3. **T3 seller wiring (first cut if late)** — the TxLINE fetch goes behind a `HOST_NOT_ALLOWED`
+   allowlist (default = the `TXLINE_BASE_URL` host); `ReplayGuard` hits recorded as
+   `REFERENCE_REUSED` audit entries. Gate: seller tests.
+
+### Part B — "Evidence" (feed + web + docs; owner: teammate / second session) ~2.5h
+
+1. **T4 feed + dashboard** — `feed/src/foldRounds.ts`: parse the frozen line (regex on raw text,
+   no runtime import needed) → `round.egress` + status `'blocked'`, plus a `foldRounds.test.ts`
+   case. Web: RoundCard **violet "PEP blocked" badge** + reason code (violet = "our software
+   intervenes", same semantic as FlowView); `Explainer.tsx` gains bullet 6 (the prevention layer).
+   Optional stretch: FlowView 4th scenario "hijack" (the coin never leaves the buyer's house).
+   Gate: feed + web tests + typecheck.
+2. **Docs** — README/README.zh L2 section (check × where-enforced × reason-code table), DEMO.md
+   beat 4 (blocked hijack), deck bullet.
+
+No file overlap between parts: A touches `packages/agent-runtime` + `coral-agents` +
+`examples/marketplace/start.ts`; B touches `examples/marketplace/feed` + `web` + root docs.
+
+### Integration gate (after both parts merge; owner: Claude session)
+
+Live devnet session: normal rounds pass silently (audit ALLOW), one rogue hijack round blocked
+pre-flight — thread message + dashboard badge + audit JSONL, and **no deposit on chain**. Export
+the session fixture. Freeze code by 19:00 for the video (deadline 22:59).
+
+**Stop-loss**: minimum shippable L2 = T1 + T2 + T4 + one README paragraph. Cut order: T3 →
+FlowView 4th scene.
 
 ## Known quirks (documented, not v0.1 blockers)
 - `FLOOR_SOL` default mismatch: code `0.0003` (`bidder.ts:31`) vs existing manifests `0.0005` — manifest
