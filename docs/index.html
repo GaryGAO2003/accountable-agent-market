@@ -201,6 +201,49 @@
   .ftm .punch { margin:14px 2px 0; font-size:13px; border-top:1px solid var(--line); padding-top:13px; color:var(--ink); }
   .ftm .punch b { color:var(--coral); }
 
+  /* panel switching + money-panel lead heading */
+  .ftm .is-hidden { display:none; }
+  .ftm .ftm-h2 { font-family:var(--mono); font-weight:700; font-size:19px; letter-spacing:-.01em;
+    margin:0 0 4px; color:var(--dim-solid); }
+
+  /* ── live-market auction view ── */
+  .ftm .lm-run { display:inline-flex; align-items:center; gap:8px; font-family:var(--mono); font-size:13px;
+    font-weight:600; color:#fff; background:var(--sky); border:1px solid var(--sky); border-radius:999px;
+    padding:9px 18px; cursor:pointer; box-shadow:var(--shadow-soft); transition:transform .15s, filter .2s; }
+  .ftm .lm-run:hover { transform:translateY(-1px); filter:brightness(1.06); }
+  .ftm .lm-run:disabled { opacity:.55; cursor:default; transform:none; filter:none; }
+
+  .ftm .lm-want { border:1px solid var(--sky); background:var(--sky-tint); border-radius:14px;
+    padding:11px 16px; margin:16px 0 14px; opacity:0; transform:translateY(6px); transition:all .35s; }
+  .ftm .lm-want.show { opacity:1; transform:none; }
+  .ftm .lm-want-tag { font-size:10.5px; letter-spacing:.12em; font-weight:700; color:var(--sky); }
+  .ftm .lm-want-body { font-size:14.5px; font-weight:600; margin-top:4px; }
+  .ftm .lm-want-body .mono { font-family:var(--mono); }
+  .ftm .lm-want-budget { font-family:var(--mono); font-weight:400; color:var(--dim-solid); font-size:12.5px; }
+
+  .ftm .lm-bids { display:grid; gap:8px; }
+  .ftm .lm-bid { display:flex; align-items:center; gap:12px; flex-wrap:wrap; border:1px solid var(--line);
+    background:var(--card); border-radius:12px; padding:10px 14px; box-shadow:var(--shadow-soft);
+    opacity:0; transform:translateX(-8px); transition:all .3s; }
+  .ftm .lm-bid.show { opacity:1; transform:none; }
+  .ftm .lm-bid-who { font-family:var(--mono); font-size:13px; font-weight:700; min-width:148px; }
+  .ftm .lm-bid-price { font-family:var(--mono); font-size:13px; font-weight:700; color:var(--ink); min-width:90px; }
+  .ftm .lm-bid-note { font-size:12.5px; color:var(--dim-solid); flex:1 1 140px; }
+  .ftm .lm-bid.win { border-color:var(--gold); background:var(--gold-tint);
+    box-shadow:0 0 0 3px var(--gold-tint), var(--shadow-soft); }
+  .ftm .lm-bid.win .lm-bid-price { color:var(--gold); }
+  .ftm .lm-tick { margin-left:auto; font-family:var(--mono); font-size:11px; font-weight:700;
+    color:var(--gold); opacity:0; transition:opacity .3s; }
+  .ftm .lm-bid.win .lm-tick { opacity:1; }
+
+  .ftm .lm-reason { margin-top:12px; min-height:18px; font-family:var(--mono); font-size:12.5px; color:var(--violet); }
+  .ftm .lm-award { margin-top:12px; border:1px solid var(--gold); background:var(--gold-tint); border-radius:12px;
+    padding:10px 14px; font-size:13px; color:var(--ink); opacity:0; transform:translateY(6px); transition:all .35s; }
+  .ftm .lm-award.show { opacity:1; transform:none; }
+  .ftm .lm-award b { color:var(--gold); }
+  .ftm .lm-next { margin:12px 2px 0; font-size:12px; color:var(--dim-solid); opacity:0; transition:opacity .4s; }
+  .ftm .lm-next.show { opacity:1; }
+
   /* ── layers ── */
   .layers{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
   .layer{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:20px;position:relative;overflow:hidden}
@@ -280,15 +323,63 @@
 </div></header>
 
 <section id="demo"><div class="wrap">
-  <p class="sec-head">Live demo · follow the money</p>
-  <h2>Four ways a round can end — three of them stop a cheater</h2>
+  <p class="sec-head">Live demo</p>
   <div class="ftm">
-    <nav class="tabs" aria-label="views">
-      <button class="tab" type="button">Live market</button>
-      <button class="tab tab-active" type="button">Follow the money</button>
+    <nav class="tabs" role="tablist" aria-label="views">
+      <button class="tab tab-active" type="button" data-tab="live" role="tab" aria-selected="true">Live market</button>
+      <button class="tab" type="button" data-tab="money" role="tab" aria-selected="false">Follow the money</button>
     </nav>
 
-    <section class="panel">
+    <!-- ── LIVE MARKET · the auction / bidding phase, before any money moves ── -->
+    <section class="panel" data-panel="live" role="tabpanel">
+      <h2 class="title">Live market — <b>agents compete, the buyer picks best value</b></h2>
+      <p class="lede">The buyer posts a <b>WANT</b> with a budget; seller agents bid at machine speed; the buyer's
+      LLM picks <span class="u-us">best value — not just the cheapest</span>. No human in the loop.</p>
+
+      <button class="lm-run" id="lm-run" type="button">▶ RUN THE AUCTION</button>
+
+      <div class="lm-want" id="lm-want">
+        <div class="lm-want-tag">BUYER WANT</div>
+        <div class="lm-want-body"><span class="mono">txline · fixtures</span>
+          <span class="lm-want-budget">— budget 0.001 SOL</span></div>
+      </div>
+
+      <div class="lm-bids">
+        <div class="lm-bid" id="lm-bid-cheap">
+          <span class="lm-bid-who">seller-cheap</span>
+          <span class="lm-bid-price">0.0003 SOL</span>
+          <span class="lm-bid-note">undercut to win on volume</span>
+          <span class="lm-tick">✓ WON</span>
+        </div>
+        <div class="lm-bid" id="lm-bid-honest">
+          <span class="lm-bid-who">seller-honest</span>
+          <span class="lm-bid-price">0.0005 SOL</span>
+          <span class="lm-bid-note">fair price, reliable delivery</span>
+          <span class="lm-tick">✓ WON</span>
+        </div>
+        <div class="lm-bid" id="lm-bid-worldcup">
+          <span class="lm-bid-who">seller-worldcup</span>
+          <span class="lm-bid-price">0.0005 SOL</span>
+          <span class="lm-bid-note">World Cup oracle specialist</span>
+          <span class="lm-tick">✓ WON</span>
+        </div>
+        <div class="lm-bid" id="lm-bid-premium">
+          <span class="lm-bid-who">seller-premium</span>
+          <span class="lm-bid-price">0.0008 SOL</span>
+          <span class="lm-bid-note">premium quality, high confidence</span>
+          <span class="lm-tick">✓ WON</span>
+        </div>
+      </div>
+
+      <div class="lm-reason" id="lm-reason"></div>
+      <div class="lm-award" id="lm-award"><b>AWARD → seller-worldcup</b> · not the cheapest — best value
+        for a World Cup fixture (specialist + within budget)</div>
+      <p class="lm-next" id="lm-next">now see what happens to the money → open the <b>Follow the money</b> tab</p>
+    </section>
+
+    <!-- ── FOLLOW THE MONEY · settlement ── -->
+    <section class="panel is-hidden" data-panel="money" role="tabpanel">
+      <h2 class="ftm-h2">Four ways a round can end — three of them stop a cheater</h2>
       <h2 class="title">Follow the money — <b>no path loses the buyer's funds</b></h2>
       <p class="lede">Money only ever sits in three places: the buyer's wallet, the seller's wallet, and
       <span class="u-us">our escrow contract</span> between them. Agents negotiate for free; the moment money
@@ -598,5 +689,51 @@
   document.querySelectorAll('.scn').forEach(function (b) {
     b.addEventListener('click', function () { play(b.dataset.scn) })
   })
+
+  // ── tab switching: exactly one panel visible ──
+  var tabs = document.querySelectorAll('.ftm .tab')
+  var panels = document.querySelectorAll('.ftm .panel')
+  function showTab(name) {
+    tabs.forEach(function (b) {
+      var on = b.dataset.tab === name
+      b.classList.toggle('tab-active', on)
+      b.setAttribute('aria-selected', on ? 'true' : 'false')
+    })
+    panels.forEach(function (p) { p.classList.toggle('is-hidden', p.dataset.panel !== name) })
+  }
+  tabs.forEach(function (b) { b.addEventListener('click', function () { showTab(b.dataset.tab) }) })
+  showTab('live')   // Live market = the auction, step one, before settlement
+
+  // ── Live market auction animation (own scheduler, independent of the money demo) ──
+  var lmTimers = []
+  var LM_BIDS = ['lm-bid-cheap', 'lm-bid-honest', 'lm-bid-worldcup', 'lm-bid-premium']
+  function lmAt(ms, fn) { if (reduced) { fn() } else { lmTimers.push(setTimeout(fn, ms)) } }
+  function lmReset() {
+    lmTimers.forEach(clearTimeout); lmTimers = []
+    $('lm-want').classList.remove('show')
+    LM_BIDS.forEach(function (id) { $(id).classList.remove('show', 'win') })
+    $('lm-reason').textContent = ''
+    $('lm-award').classList.remove('show')
+    $('lm-next').classList.remove('show')
+  }
+  function runAuction() {
+    lmReset()
+    var run = $('lm-run'); run.disabled = true
+    var t = 300
+    lmAt(t, function () { $('lm-want').classList.add('show') }); t += STEP
+    LM_BIDS.forEach(function (id) {
+      lmAt(t, function () { $(id).classList.add('show') }); t += Math.round(STEP * 0.66)
+    })
+    t += Math.round(STEP * 0.4)
+    lmAt(t, function () { $('lm-reason').textContent = 'buyer LLM reasoning… weighing price × fit × reliability' })
+    t += STEP + 300
+    lmAt(t, function () {
+      $('lm-reason').textContent = ''
+      $('lm-bid-worldcup').classList.add('win')
+      $('lm-award').classList.add('show')
+    }); t += STEP
+    lmAt(t, function () { $('lm-next').classList.add('show'); run.disabled = false })
+  }
+  $('lm-run').addEventListener('click', runAuction)
 })()
 </script>
