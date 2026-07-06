@@ -317,7 +317,7 @@
 
   <div class="pills">
     <span class="pill">Solana devnet</span><span class="pill">CoralOS / MCP</span><span class="pill">Anchor · Rust</span>
-    <span class="pill">TypeScript</span><span class="pill">Solana Pay</span><span class="pill">TxODDS oracle</span>
+    <span class="pill">TypeScript</span><span class="pill">Solana Pay</span><span class="pill">Verify-by-re-exec</span>
     <span class="pill">UK AI Agent Hackathon EP5 · Coral track</span>
   </div>
 </div></header>
@@ -340,7 +340,7 @@
 
       <div class="lm-want" id="lm-want">
         <div class="lm-want-tag">BUYER WANT</div>
-        <div class="lm-want-body"><span class="mono">txline · fixtures</span>
+        <div class="lm-want-body"><span class="mono">dataset · snapshot</span>
           <span class="lm-want-budget">— budget 0.001 SOL</span></div>
       </div>
 
@@ -357,10 +357,10 @@
           <span class="lm-bid-note">fair price, reliable delivery</span>
           <span class="lm-tick">✓ WON</span>
         </div>
-        <div class="lm-bid" id="lm-bid-worldcup">
-          <span class="lm-bid-who">seller-worldcup</span>
+        <div class="lm-bid" id="lm-bid-specialist">
+          <span class="lm-bid-who">seller-specialist</span>
           <span class="lm-bid-price">0.0005 SOL</span>
-          <span class="lm-bid-note">World Cup oracle specialist</span>
+          <span class="lm-bid-note">domain specialist · verified source</span>
           <span class="lm-tick">✓ WON</span>
         </div>
         <div class="lm-bid" id="lm-bid-premium">
@@ -372,8 +372,8 @@
       </div>
 
       <div class="lm-reason" id="lm-reason"></div>
-      <div class="lm-award" id="lm-award"><b>AWARD → seller-worldcup</b> · not the cheapest — best value
-        for a World Cup fixture (specialist + within budget)</div>
+      <div class="lm-award" id="lm-award"><b>AWARD → seller-specialist</b> · not the cheapest — best value:
+        a domain specialist on this dataset, within budget</div>
       <p class="lm-next" id="lm-next">now see what happens to the money → open the <b>Follow the money</b> tab</p>
     </section>
 
@@ -412,7 +412,7 @@
           <div class="talk" id="talk">
             <span class="talk-label">AGENTS NEGOTIATE — NO FUNDS MOVED</span>
             <div class="talk-chips">
-              <span class="chip" id="c-want">WANT txline · budget 0.001</span>
+              <span class="chip" id="c-want">WANT dataset · budget 0.001</span>
               <span class="chip" id="c-bids">BID ×4</span>
               <span class="chip" id="c-award">AWARD + reason</span>
             </div>
@@ -438,7 +438,7 @@
             <div class="home-who">WALLET</div>
             <div class="home-name">🤝 Winning seller</div>
             <div class="home-bal"><span id="bal-seller">2.43100</span> <small>SOL</small></div>
-            <div class="home-note" id="seller-note">delivers real TxODDS data… or tries not to</div>
+            <div class="home-note" id="seller-note">delivers the verified dataset… or tries not to</div>
           </div>
 
           <span class="fly" id="fly">📦 DELIVERED —</span>
@@ -495,8 +495,8 @@
 
 <section><div class="wrap">
   <p class="sec-head">What it sells</p>
-  <h2>A World Cup odds oracle you can re-run to prove</h2>
-  <p class="sec-lede">The demo product is a verified, de-margined <b>TxODDS</b> fixture read plus an LLM value call. It's chosen precisely because quality is <b>objectively verifiable by re-execution</b> — which is what makes the slash, the refund, and the reputation hit credible rather than a matter of opinion. Swap <code class="mono">deliverService()</code> and the same accountability rails resell anything an agent can prove.</p>
+  <h2>A verified dataset you can re-run to prove</h2>
+  <p class="sec-lede">The demo product is a verified data read plus an LLM value call. It's chosen precisely because quality is <b>objectively verifiable by re-execution</b> — which is what makes the slash, the refund, and the reputation hit credible rather than a matter of opinion. Swap <code class="mono">deliverService()</code> and the same accountability rails resell anything an agent can prove.</p>
 </div></section>
 
 <section><div class="wrap">
@@ -527,7 +527,7 @@
       <a href="https://github.com/GaryGAO2003" target="_blank" rel="noreferrer">Gary GAO ↗</a>
       <a href="https://github.com/LS2422" target="_blank" rel="noreferrer">Yiyang “Leo” Shen ↗</a></div>
     <div><h4>Stack</h4>
-      <span style="font-size:13px;color:var(--muted)">Solana · Anchor · CoralOS · MCP<br>TypeScript · React · TxODDS · LLM</span></div>
+      <span style="font-size:13px;color:var(--muted)">Solana · Anchor · CoralOS · MCP<br>TypeScript · React · LLM</span></div>
   </div>
   <p class="foot-meta">Accountable Agent Market · UK AI Agent Hackathon EP5 · DoraHacks #2272 · Coral / CoralOS &amp; STUK track · Solana devnet.</p>
 </div></footer>
@@ -580,7 +580,7 @@
     $('home-seller').classList.remove('glow-mint'); $('home-buyer').classList.remove('glow-coral')
     $('vault').classList.remove('glow-violet')
     $('v-block-msg').textContent = 'Our software refused — 0 SOL moved'
-    $('seller-note').textContent = 'delivers real TxODDS data… or tries not to'
+    $('seller-note').textContent = 'delivers the verified dataset… or tries not to'
     Object.keys(SVGP).forEach(function (k) { $(SVGP[k]).classList.remove(LIVE[k]) })
     bal('bal-buyer', '1.00000'); bal('bal-vault', '0.00000'); bal('bal-seller', '2.43100')
     $('log').innerHTML = ''
@@ -595,7 +595,7 @@
     // ── L2 PEP: payout hijack blocked — no coin, no balance change ──
     if (name === 'hijack') {
       var th = 0
-      at(th, function () { $('c-want').classList.add('on'); put('lv-want', '<b>WANT</b> txline fixtures budget=0.001') }); th += STEP
+      at(th, function () { $('c-want').classList.add('on'); put('lv-want', '<b>WANT</b> dataset budget=0.001') }); th += STEP
       at(th, function () { $('c-bids').classList.add('on'); put('lv-bid', '<b>BID ×4</b> — LLM sellers compete on price + notes') }); th += STEP
       at(th, function () { $('c-award').classList.add('won'); put('lv-award', '<b>AWARD</b> → winner, with a stated reason') }); th += STEP
       at(th, function () {
@@ -615,7 +615,7 @@
     // ── L3 reputation: repeat offender frozen out — no coin, no balance change ──
     if (name === 'frozen') {
       var tf = 0
-      at(tf, function () { $('c-want').classList.add('on'); put('lv-want', '<b>WANT</b> txline fixtures budget=0.001') }); tf += STEP
+      at(tf, function () { $('c-want').classList.add('on'); put('lv-want', '<b>WANT</b> dataset budget=0.001') }); tf += STEP
       at(tf, function () { $('c-bids').classList.add('on'); put('lv-bid', '<b>BID</b> seller-rogue 0.0001 <span style="color:var(--coral)">(cheapest)</span> · seller-honest 0.0006') }); tf += STEP
       at(tf, function () { put('lv-us', '<b>REPUTATION</b> seller-rogue score=−3 → flagged (refunded last round)') }); tf += STEP
       at(tf, function () { put('lv-x', 'rogue bid <span style="color:var(--coral)">⃠ frozen out</span> — dropped before the LLM ever sees it') }); tf += STEP
@@ -631,7 +631,7 @@
     var amt = honest ? '0.0008' : '0.00025'
     var t = 0
 
-    at(t, function () { $('c-want').classList.add('on'); put('lv-want', '<b>WANT</b> txline fixtures budget=0.001') }); t += STEP
+    at(t, function () { $('c-want').classList.add('on'); put('lv-want', '<b>WANT</b> dataset budget=0.001') }); t += STEP
     at(t, function () { $('c-bids').classList.add('on'); put('lv-bid', '<b>BID</b> ×4 — cheap 0.0004 · honest 0.0007 · premium 0.0009 · rogue 0.00025') }); t += STEP
     at(t, function () {
       $('c-award').classList.add('won')
@@ -655,16 +655,16 @@
         put('lv-us', 'deadline hits — buyer signs <b>refund()</b>, no seller permission needed') }); t += STEP
     } else if (!honest) {
       at(t, function () { $('fly').classList.add('bad'); $('fly').textContent = '📦 forged payload'
-        put('lv-del', '<b>DELIVERED</b> {"FixtureCount":9,…} — forged (bad_count)') }); t += STEP
+        put('lv-del', '<b>DELIVERED</b> {"rowCount":9,…} — forged (bad_count)') }); t += STEP
       at(t, function () { state('iv-verify', 'mismatch ✕', 'bad')
-        put('lv-x', '<b>VERIFICATION_FAILED</b> — our re-exec says 24 fixtures, seller said 9') }); t += STEP
+        put('lv-x', '<b>VERIFICATION_FAILED</b> — our re-exec says 24 rows, seller said 9') }); t += STEP
       at(t, function () { state('iv-deadline', '45s passed', 'bad')
         put('lv-us', 'bad data = no delivery — deadline hits, buyer signs <b>refund()</b>') }); t += STEP
     } else {
       at(t, function () { $('fly').classList.add('on'); $('fly').textContent = '📦 DELIVERED ✓'
-        put('lv-del', '<b>DELIVERED</b> {"FixtureCount":24,…} — real TxODDS payload') }); t += STEP
+        put('lv-del', '<b>DELIVERED</b> {"rowCount":24,…} — verified payload') }); t += STEP
       at(t, function () { state('iv-verify', 'match ✓', 'ok')
-        put('lv-us', '<b>VERIFIED</b> ok=1 — payload matches our own independent TxLINE re-exec') }); t += STEP
+        put('lv-us', '<b>VERIFIED</b> ok=1 — payload matches our own independent re-exec') }); t += STEP
     }
 
     if (honest) {
@@ -706,7 +706,7 @@
 
   // ── Live market auction animation (own scheduler, independent of the money demo) ──
   var lmTimers = []
-  var LM_BIDS = ['lm-bid-cheap', 'lm-bid-honest', 'lm-bid-worldcup', 'lm-bid-premium']
+  var LM_BIDS = ['lm-bid-cheap', 'lm-bid-honest', 'lm-bid-specialist', 'lm-bid-premium']
   function lmAt(ms, fn) { if (reduced) { fn() } else { lmTimers.push(setTimeout(fn, ms)) } }
   function lmReset() {
     lmTimers.forEach(clearTimeout); lmTimers = []
@@ -729,7 +729,7 @@
     t += STEP + 300
     lmAt(t, function () {
       $('lm-reason').textContent = ''
-      $('lm-bid-worldcup').classList.add('win')
+      $('lm-bid-specialist').classList.add('win')
       $('lm-award').classList.add('show')
     }); t += STEP
     lmAt(t, function () { $('lm-next').classList.add('show'); run.disabled = false })
