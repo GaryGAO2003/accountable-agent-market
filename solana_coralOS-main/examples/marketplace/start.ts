@@ -169,6 +169,10 @@ async function main() {
 
   const buyerOpts: Record<string, unknown> = {
     BUYER_KEYPAIR_B58: str(keypair),
+    // The buyer must honor SETTLEMENT_MODE too (the seller opts do at ~L133). Without this it falls back
+    // to the toml default `arbiter` and crashes building an empty ARBITER_PROGRAM_ID PublicKey; forks
+    // without their own arbiter deployment must run SETTLEMENT_MODE=direct (base escrow — see README F3).
+    ...(env.SETTLEMENT_MODE ? { SETTLEMENT_MODE: str(env.SETTLEMENT_MODE) } : {}),
     // Arbiter settlement is the default path — the buyer crashes at startup without the arbiter key.
     ...(env.ARBITER_KEYPAIR_B58 ? { ARBITER_KEYPAIR_B58: str(env.ARBITER_KEYPAIR_B58) } : {}),
     ...(arbiterProgramId ? { ARBITER_PROGRAM_ID: str(arbiterProgramId) } : {}),

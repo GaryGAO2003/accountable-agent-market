@@ -16,7 +16,10 @@ import { PROGRAM_ID as ESCROW_PROGRAM_ID } from './escrow.js'
 const { AnchorProvider, BN } = anchor
 
 export const DEFAULT_ARBITER_PROGRAM_ID = 'FJtuVXsyXuRKqgJBEPAXmktkd13CqStapgevzGwYktXd'
-export const ARBITER_PROGRAM_ID = new PublicKey(process.env.ARBITER_PROGRAM_ID ?? DEFAULT_ARBITER_PROGRAM_ID)
+// `||` not `??`: coral injects the toml default as an empty string "", which `??` would NOT treat as
+// missing, so `new PublicKey("")` throws at import time (crashes the buyer before any round, even in
+// direct mode). `||` falls back to the deployed default on an empty/unset value.
+export const ARBITER_PROGRAM_ID = new PublicKey(process.env.ARBITER_PROGRAM_ID || DEFAULT_ARBITER_PROGRAM_ID)
 
 const ARBITER_IDL = {
   address: ARBITER_PROGRAM_ID.toBase58(),
